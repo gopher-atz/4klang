@@ -29,9 +29,10 @@ static int SelectedIUnit = 0;
 static int SelectedGUnit = 0;
 static int SelectedTab = T_INSTRUMENT;
 static int SelectedInstrument = 0;
+static int LinkToInstrument[16] = { 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 };
 static int SetUnit = -1;
 static char SliderValTxt[128];
-static DWORD UnitCopyBuffer[MAX_SLOT_VALUES];
+static DWORD UnitCopyBuffer[MAX_UNIT_SLOTS];
 static int InstrumentScrollPos[MAX_INSTRUMENTS];
 static int GlobalScrollPos;
 static int InitDone = false;
@@ -183,17 +184,18 @@ char* GetUnitString(BYTE* unit, char* unitname)
 	if (unit[0] == M_VCF)
 	{
 		VCF_valP val = (VCF_valP)unit;
-		if (val->type == VCF_LOWPASS)
+		int ft = val->type & ~VCF_STEREO;
+		if (ft == VCF_LOWPASS)
 			sprintf(UnitDesc, "    (%s F:%d)","Low", val->freq);
-		if (val->type == VCF_HIGHPASS)
+		if (ft == VCF_HIGHPASS)
 			sprintf(UnitDesc, "    (%s F:%d)","High", val->freq);
-		if (val->type == VCF_BANDPASS)
+		if (ft == VCF_BANDPASS)
 			sprintf(UnitDesc, "    (%s F:%d)","Band", val->freq);
-		if (val->type == VCF_BANDSTOP)
+		if (ft == VCF_BANDSTOP)
 			sprintf(UnitDesc, "    (%s F:%d)","Notch", val->freq);
-		if (val->type == VCF_PEAK)
+		if (ft == VCF_PEAK)
 			sprintf(UnitDesc, "    (%s F:%d)","Peak", val->freq);
-		if (val->type == VCF_ALLPASS)
+		if (ft == VCF_ALLPASS)
 			sprintf(UnitDesc, "    (%s F:%d)","All", val->freq);		
 	}
 	if (unit[0] == M_FOP)
@@ -217,6 +219,8 @@ char* GetUnitString(BYTE* unit, char* unitname)
 			sprintf(UnitDesc, "    (%s)","2+/Pop");
 		if (val->flags == FOP_LOADNOTE)
 			sprintf(UnitDesc, "    (%s)","LoadNote");
+		if (val->flags == FOP_MULP2)
+			sprintf(UnitDesc, "    (%s)","2*/Pop");
 	}
 	if (unit[0] == M_DLL)
 	{
@@ -235,16 +239,24 @@ char* GetUnitString(BYTE* unit, char* unitname)
 		}
 		else
 		{
+			std::string st;
+			if (val->type & FST_ADD)
+				st = "+";
+			if (val->type & FST_MUL)
+				st = "*";
+			if (val->type & FST_POP)
+				st += ",Pop";
+
 			if ((val->dest_stack != -1) && (val->dest_stack != SelectedInstrument))
 			{
 				if (val->dest_stack == MAX_INSTRUMENTS)
-					sprintf(UnitDesc, "    (GU%d %s)", val->dest_unit+1, UnitModulationTargetShortNames[val->dest_id][val->dest_slot]);
+					sprintf(UnitDesc, "    (GU%d %s)%s", val->dest_unit+1, UnitModulationTargetShortNames[val->dest_id][val->dest_slot], st.c_str());
 				else
-					sprintf(UnitDesc, "    (%dU%d %s)",val->dest_stack+1, val->dest_unit+1, UnitModulationTargetShortNames[val->dest_id][val->dest_slot]);
+					sprintf(UnitDesc, "    (%dU%d %s)%s",val->dest_stack+1, val->dest_unit+1, UnitModulationTargetShortNames[val->dest_id][val->dest_slot], st.c_str());
 			}
 			else
 			{
-				sprintf(UnitDesc, "    (U%d %s)", val->dest_unit+1, UnitModulationTargetShortNames[val->dest_id][val->dest_slot]);
+				sprintf(UnitDesc, "    (U%d %s)%s", val->dest_unit+1, UnitModulationTargetShortNames[val->dest_id][val->dest_slot], st.c_str());
 			}
 		}
 	}
@@ -329,8 +341,13 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 			const char* instrument[] = {"1", "2", "3", "4", "5", "6", "7", "8",
 				"9", "10", "11", "12", "13", "14", "15", "16" };
 			for (int i = 0; i < 16; i++)
+			{
 				SendDlgItemMessage(hwndDlg, IDC_INSTRUMENT, CB_ADDSTRING, (WPARAM)0, (LPARAM)(instrument[i]));
+				SendDlgItemMessage(hwndDlg, IDC_INSTRUMENTLINK, CB_ADDSTRING, (WPARAM)0, (LPARAM)(instrument[i]));
+			}
+			SendDlgItemMessage(hwndDlg, IDC_INSTRUMENTLINK, CB_ADDSTRING, (WPARAM)0, (LPARAM)("None"));
 			SendDlgItemMessage(hwndDlg, IDC_INSTRUMENT, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+			SendDlgItemMessage(hwndDlg, IDC_INSTRUMENT, CB_SETCURSEL, (WPARAM)16, (LPARAM)0);
 
 			const char* patternsize[] = {"8", "16", "32", "64"};
 			for (int i = 0; i < 4; i++)
@@ -378,6 +395,59 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 					sinfo.nPos = InstrumentScrollPos[SelectedInstrument];
 					SetScrollInfo(ScrollWnd, SB_VERT, &sinfo, true);
 					ScrollWindow(ScrollWnd, 0, oldpos - sinfo.nPos, NULL, NULL);
+				}
+				return TRUE;
+			}
+			// link to combo box 
+			if (((HWND)lParam) == GetDlgItem(hwndDlg, IDC_INSTRUMENTLINK))
+			{
+				if (HIWORD(wParam) == CBN_SELCHANGE)
+				{
+					int linkToInstrument = SendDlgItemMessage(hwndDlg, IDC_INSTRUMENTLINK, CB_GETCURSEL, (WPARAM)0, (LPARAM)0);
+					if (SelectedInstrument == linkToInstrument)
+					{
+						MessageBox(DialogWnd, "Instrument cannot be linked to itself!", "Info", MB_OK);
+						return TRUE;
+					}
+					if (linkToInstrument < 16)
+					{
+						// compare instruments
+						for (int u = 0; u < MAX_UNITS; u++)
+						{
+							// special case, compare manually
+							if (SynthObjP->InstrumentValues[SelectedInstrument][u][0] == M_DLL)
+							{
+								DLL_valP ds = (DLL_valP)SynthObjP->InstrumentValues[SelectedInstrument][u];
+								DLL_valP dl = (DLL_valP)SynthObjP->InstrumentValues[linkToInstrument][u];
+								if (ds->pregain != dl->pregain ||
+									ds->dry != dl->dry ||
+									ds->feedback != dl->feedback ||
+									ds->damp != dl->damp ||
+									ds->freq != dl->freq ||
+									ds->depth != dl->depth ||
+									ds->guidelay != dl->guidelay ||
+									ds->synctype != dl->synctype ||
+									ds->leftreverb != dl->leftreverb ||
+									ds->reverb != dl->reverb)
+								{
+									MessageBox(DialogWnd, "Instruments cannot be linked as they differ!", "Info", MB_OK);
+									SendDlgItemMessage(hwndDlg, IDC_INSTRUMENTLINK, CB_SETCURSEL, (WPARAM)16, (LPARAM)0);
+									return TRUE;
+								}
+							}
+							else
+							{
+								if (memcmp(SynthObjP->InstrumentValues[SelectedInstrument][u], SynthObjP->InstrumentValues[linkToInstrument][u], MAX_UNIT_SLOTS))
+								{
+									MessageBox(DialogWnd, "Instruments cannot be linked as they differ!", "Info", MB_OK);
+									SendDlgItemMessage(hwndDlg, IDC_INSTRUMENTLINK, CB_SETCURSEL, (WPARAM)16, (LPARAM)0);
+									return TRUE;
+								}
+							}
+						}
+					}
+					// set link
+					LinkToInstrument[SelectedInstrument] = linkToInstrument;
 				}
 				return TRUE;
 			}
@@ -498,6 +568,7 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 							for (int i = 0; i < MAX_INSTRUMENTS; i++)
 							{
 								UpdateSignalCount(i);
+								LinkToInstrument[i] = 16;
 							}
 							UpdateControls(SelectedInstrument);
 						}
@@ -620,12 +691,14 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 								InstrumentScrollPos[SelectedInstrument] = 0;
 								SynthObjP->InstrumentSignalValid[SelectedInstrument] = 0;
 								Go4kVSTi_LoadInstrument(ofn.lpstrFile, (char)SelectedInstrument);
+								LinkToInstrument[SelectedInstrument] = 16;
 							}
 							else
 							{
 								GlobalScrollPos = 0;
 								SynthObjP->GlobalSignalValid = 0;
 								Go4kVSTi_LoadInstrument(ofn.lpstrFile, (char)16);
+								LinkToInstrument[SelectedInstrument] = 16;
 							}
 							UpdateControls(SelectedInstrument);			
 						}
@@ -864,17 +937,17 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 					case IDC_UNIT_COPY:
 					{
 						if (SelectedTab == T_INSTRUMENT)
-							memcpy(UnitCopyBuffer, SynthObjP->InstrumentValues[SelectedInstrument][SelectedIUnit], MAX_SLOT_VALUES);
+							memcpy(UnitCopyBuffer, SynthObjP->InstrumentValues[SelectedInstrument][SelectedIUnit], MAX_UNIT_SLOTS);
 						else
-							memcpy(UnitCopyBuffer, SynthObjP->GlobalValues[SelectedGUnit], MAX_SLOT_VALUES);
+							memcpy(UnitCopyBuffer, SynthObjP->GlobalValues[SelectedGUnit], MAX_UNIT_SLOTS);
 						return TRUE;
 					}
 					case IDC_UNIT_PASTE:
 					{
 						if (SelectedTab == T_INSTRUMENT)
-							memcpy(SynthObjP->InstrumentValues[SelectedInstrument][SelectedIUnit], UnitCopyBuffer, MAX_SLOT_VALUES);
+							memcpy(SynthObjP->InstrumentValues[SelectedInstrument][SelectedIUnit], UnitCopyBuffer, MAX_UNIT_SLOTS);
 						else
-							memcpy(SynthObjP->GlobalValues[SelectedGUnit], UnitCopyBuffer, MAX_SLOT_VALUES);
+							memcpy(SynthObjP->GlobalValues[SelectedGUnit], UnitCopyBuffer, MAX_UNIT_SLOTS);
 						UpdateControls(SelectedInstrument);	
 						return TRUE;
 					}
@@ -960,6 +1033,7 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 					for (int i = 0; i < MAX_INSTRUMENTS; i++)
 					{
 						UpdateSignalCount(i);
+						LinkToInstrument[i] = 16;
 					}
 					UpdateControls(SelectedInstrument);
 				}
@@ -981,6 +1055,7 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 						InstrumentScrollPos[SelectedInstrument] = 0;
 						SynthObjP->InstrumentSignalValid[SelectedInstrument] = 0;
 						Go4kVSTi_LoadInstrument(DropFileName, (char)SelectedInstrument);
+						LinkToInstrument[SelectedInstrument] = 16;
 					}
 					else
 					{
@@ -1245,7 +1320,7 @@ void Go4kVSTiGUI_Create(HINSTANCE hInst)
 	timerID = SetTimer(DialogWnd, timer, 200, TimerProc);
 	backupTimerID = SetTimer(DialogWnd, backupTimer, 60*1000, BackupTimerProc);
 
-	memset(UnitCopyBuffer, 0, MAX_SLOT_VALUES);
+	memset(UnitCopyBuffer, 0, MAX_UNIT_SLOTS);
 
 	// set fst instrument elements
 	const char* idest[] = {"Local", "Instrument  1", "Instrument  2", "Instrument  3", "Instrument  4", "Instrument  5", "Instrument  6", "Instrument  7", "Instrument  8",
@@ -1313,6 +1388,38 @@ void Go4kVSTiGUI_Destroy()
 	DestroyWindow(DialogWnd);
 }
 
+void LinkInstrumentUnit(int selectedInstrument, int selectedIUnit)
+{
+	for (int i = 0; i < 16; i++)
+	{	
+		if (LinkToInstrument[i] == selectedInstrument)
+		{
+			if (SynthObjP->InstrumentValues[selectedInstrument][selectedIUnit][0] == M_DLL)
+			{
+				DLL_valP ds = (DLL_valP)SynthObjP->InstrumentValues[selectedInstrument][selectedIUnit];
+				DLL_valP dl = (DLL_valP)SynthObjP->InstrumentValues[i][selectedIUnit];
+				dl->id			= ds->id;
+				dl->pregain		= ds->pregain;
+				dl->dry			= ds->dry;
+				dl->feedback	= ds->feedback;
+				dl->damp		= ds->damp;
+				dl->freq		= ds->freq;
+				dl->depth		= ds->depth;
+				dl->guidelay	= ds->guidelay;
+				dl->synctype	= ds->synctype;
+				dl->leftreverb	= ds->leftreverb;
+				dl->reverb		= ds->reverb;
+			}
+			else
+			{
+				memcpy(SynthObjP->InstrumentValues[i][selectedIUnit], 
+						SynthObjP->InstrumentValues[selectedInstrument][selectedIUnit], 
+						MAX_UNIT_SLOTS);
+			}
+		}
+	}
+	Go4kVSTi_UpdateDelayTimes();
+}
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -1331,10 +1438,11 @@ void SetButtonParams(int uid, BYTE* val, WPARAM id, LPARAM lParam)
 		ButtonGroupChanged(IDC_VCO_SINE, IDC_VCO_GATE, LOWORD(id), M_VCO, res);
 		if (res)
 		{
+			v->flags = 0;
 			if (SendDlgItemMessage(ModuleWnd[M_VCO], IDC_VCO_LFO, BM_GETCHECK, 0, 0)==BST_CHECKED)
-				v->flags = VCO_LFO;
-			else
-				v->flags = 0;
+				v->flags |= VCO_LFO;
+			if (SendDlgItemMessage(ModuleWnd[M_VCO], IDC_VCO_STEREO, BM_GETCHECK, 0, 0)==BST_CHECKED) 
+				v->flags |= VCO_STEREO;
 
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCO], IDC_VCO_TRANSPOSE), true);
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCO], IDC_VCO_TRANSPOSE_VAL), true);
@@ -1370,8 +1478,6 @@ void SetButtonParams(int uid, BYTE* val, WPARAM id, LPARAM lParam)
 			if (IDC_VCO_SINE == res)
 			{
 				v->flags |= VCO_SINE;
-				EnableWindow(GetDlgItem(ModuleWnd[M_VCO], IDC_VCO_COLOR), false);
-				EnableWindow(GetDlgItem(ModuleWnd[M_VCO], IDC_VCO_COLOR_VAL), false);
 			}
 			if (IDC_VCO_TRISAW == res)
 			{
@@ -1403,6 +1509,13 @@ void SetButtonParams(int uid, BYTE* val, WPARAM id, LPARAM lParam)
 			else
 				v->flags &= ~VCO_LFO;
 		}
+		if (LOWORD(id) == IDC_VCO_STEREO)
+		{			
+			if (SendDlgItemMessage(ModuleWnd[M_VCO], IDC_VCO_STEREO, BM_GETCHECK, 0, 0)==BST_CHECKED) 
+				v->flags |= VCO_STEREO;
+			else
+				v->flags &= ~VCO_STEREO;
+		}
 		// gate bits changed?
 		WORD gatebits;
 		GetCheckboxGroupBitmask(IDC_VCO_GATE1, IDC_VCO_GATE16, LOWORD(id), M_VCO, gatebits, res);
@@ -1413,6 +1526,8 @@ void SetButtonParams(int uid, BYTE* val, WPARAM id, LPARAM lParam)
 			// adjust color slider
 			InitSliderCenter(ModuleWnd[M_VCO], IDC_VCO_COLOR, 0, 128, v->color);
 		}
+		// update signalcount
+		UpdateSignalCount(SelectedInstrument);
 	}
 	else if (uid == M_VCF)
 	{
@@ -1420,19 +1535,42 @@ void SetButtonParams(int uid, BYTE* val, WPARAM id, LPARAM lParam)
 		ButtonGroupChanged(IDC_VCF_LOW, IDC_VCF_ALL, LOWORD(id), M_VCF, res);
 		if (res)
 		{
+			int stereo = v->type & VCF_STEREO;
 			if (res == IDC_VCF_LOW)
-				v->type = VCF_LOWPASS;
+				v->type = stereo | VCF_LOWPASS;
 			else if (res == IDC_VCF_HIGH)
-				v->type = VCF_HIGHPASS;
+				v->type = stereo | VCF_HIGHPASS;
 			else if (res == IDC_VCF_BAND)
-				v->type = VCF_BANDPASS;
+				v->type = stereo | VCF_BANDPASS;
 			else if (res == IDC_VCF_NOTCH)
-				v->type = VCF_BANDSTOP;
+				v->type = stereo | VCF_BANDSTOP;
 			else if (res == IDC_VCF_PEAK)
-				v->type = VCF_PEAK;
+				v->type = stereo | VCF_PEAK;
 			else if (res == IDC_VCF_ALL)
-				v->type = VCF_ALLPASS;
+				v->type = stereo | VCF_ALLPASS;
 		}
+		if (LOWORD(id) == IDC_VCF_STEREO)
+		{			
+			if (SendDlgItemMessage(ModuleWnd[M_VCF], IDC_VCF_STEREO, BM_GETCHECK, 0, 0)==BST_CHECKED) 
+				v->type |= VCF_STEREO;
+			else
+				v->type &= ~VCF_STEREO;
+		}
+		// update signalcount
+		UpdateSignalCount(SelectedInstrument);
+	}
+	else if (uid == M_DST)
+	{
+		DST_valP v = (DST_valP)val;
+		if (LOWORD(id) == IDC_DST_STEREO)
+		{			
+			if (SendDlgItemMessage(ModuleWnd[M_DST], IDC_DST_STEREO, BM_GETCHECK, 0, 0)==BST_CHECKED) 
+				v->stereo = VCF_STEREO;
+			else
+				v->stereo = 0;
+		}
+		// update signalcount
+		UpdateSignalCount(SelectedInstrument);
 	}
 	else if (uid == M_DLL)
 	{
@@ -1504,7 +1642,7 @@ void SetButtonParams(int uid, BYTE* val, WPARAM id, LPARAM lParam)
 			SynthObjP->GlobalSignalValid = 0;
 		}
 		FOP_valP v = (FOP_valP)val;
-		ButtonGroupChanged(IDC_FOP_POP, IDC_FOP_LOADNOTE, LOWORD(id), M_FOP, res);
+		ButtonGroupChanged(IDC_FOP_POP, IDC_FOP_MULP2, LOWORD(id), M_FOP, res);
 		if (res)
 		{
 			v->flags = 1 + res - IDC_FOP_POP;
@@ -1546,10 +1684,10 @@ void SetButtonParams(int uid, BYTE* val, WPARAM id, LPARAM lParam)
 
 				SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_UNIT, CB_RESETCONTENT, (WPARAM)0, (LPARAM)0);
 				SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_UNIT, CB_ADDSTRING, (WPARAM)0, (LPARAM)"- Nothing Selected -");
-				for (int i = 0; i < MAX_SLOTS; i++)
+				for (int i = 0; i < MAX_UNITS; i++)
 				{
 					char unitname[128], unitname2[128];
-					sprintf(unitname, "%d: %s", i+1, GetUnitString(&units[i*MAX_SLOT_VALUES], unitname2));
+					sprintf(unitname, "%d: %s", i+1, GetUnitString(&units[i*MAX_UNIT_SLOTS], unitname2));
 					SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_UNIT, CB_ADDSTRING, (WPARAM)0, (LPARAM)unitname);
 				}
 				SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_UNIT, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
@@ -1636,6 +1774,28 @@ void SetButtonParams(int uid, BYTE* val, WPARAM id, LPARAM lParam)
 
 			v->dest_id = slots[0];
 		}
+		ButtonGroupChanged(IDC_FST_SET, IDC_FST_MUL, LOWORD(id), M_FST, res);
+		if (res)
+		{
+			int pop = v->type & FST_POP;
+			if (res == IDC_FST_SET)
+				v->type = FST_SET;
+			else if (res == IDC_FST_ADD)
+				v->type = FST_ADD;
+			else if (res == IDC_FST_MUL)
+				v->type = FST_MUL;
+			if (pop)
+				v->type |= FST_POP;
+		}
+		if (LOWORD(id) == IDC_FST_POP)
+		{			
+			if (SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_POP, BM_GETCHECK, 0, 0)==BST_CHECKED) 
+				v->type |= FST_POP;
+			else
+				v->type &= ~FST_POP;
+		}
+		// update signalcount
+		UpdateSignalCount(SelectedInstrument);
 	}
 	else if (uid == M_ACC)
 	{
@@ -1661,6 +1821,7 @@ bool ButtonPressed(WPARAM id, LPARAM lParam)
 		char unitname[128];
 		GetUnitString(SynthObjP->InstrumentValues[SelectedInstrument][SelectedIUnit], unitname);
 		SetWindowText(GetDlgItem(TabWnd[T_INSTRUMENT], IDC_ISTACK_UNIT1+SelectedIUnit*6), unitname);
+		LinkInstrumentUnit(SelectedInstrument, SelectedIUnit);
 	}
 	else if (SelectedTab == T_GLOBAL)
 	{		
@@ -1881,6 +2042,7 @@ bool ScrollbarChanged(HWND hwndDlg, WPARAM wParam, LPARAM lParam)
 		char unitname[128];
 		GetUnitString(SynthObjP->InstrumentValues[SelectedInstrument][SelectedIUnit], unitname);
 		SetWindowText(GetDlgItem(TabWnd[T_INSTRUMENT], IDC_ISTACK_UNIT1+SelectedIUnit*6), unitname);
+		LinkInstrumentUnit(SelectedInstrument, SelectedIUnit);
 	}
 	else if (SelectedTab == T_GLOBAL)
 	{		
@@ -1909,7 +2071,7 @@ void CheckModulations(int unit1, int unit2 = -1)
 		// look in all instruments if a store unit had its target on one of the changed units
 		for (int i = 0; i < MAX_INSTRUMENTS; i++)
 		{
-			for (int u = 0; u < MAX_SLOTS; u++)
+			for (int u = 0; u < MAX_UNITS; u++)
 			{
 				if (SynthObjP->InstrumentValues[i][u][0] == M_FST)
 				{
@@ -1959,7 +2121,7 @@ void CheckModulations(int unit1, int unit2 = -1)
 			}
 		}
 		// now check the global slots
-		for (int u = 0; u < MAX_SLOTS; u++)
+		for (int u = 0; u < MAX_UNITS; u++)
 		{
 			if (SynthObjP->GlobalValues[u][0] == M_FST)
 			{
@@ -2008,7 +2170,7 @@ void CheckModulations(int unit1, int unit2 = -1)
 		// look in all instruments if a store unit had its target on a global unit
 		for (int i = 0; i < MAX_INSTRUMENTS; i++)
 		{
-			for (int u = 0; u < MAX_SLOTS; u++)
+			for (int u = 0; u < MAX_UNITS; u++)
 			{
 				if (SynthObjP->InstrumentValues[i][u][0] == M_FST)
 				{
@@ -2048,7 +2210,7 @@ void CheckModulations(int unit1, int unit2 = -1)
 			}
 		}
 		// now check the global slots
-		for (int u = 0; u < MAX_SLOTS; u++)
+		for (int u = 0; u < MAX_UNITS; u++)
 		{
 			if (SynthObjP->GlobalValues[u][0] == M_FST)
 			{
@@ -2097,7 +2259,7 @@ bool StackButtonPressed(WPARAM id)
 	if (SelectedTab == T_INSTRUMENT)
 	{
 		// check unit click
-		InterleavedButtonGroupChanged(IDC_ISTACK_UNIT1, MAX_SLOTS, LOWORD(id), res);
+		InterleavedButtonGroupChanged(IDC_ISTACK_UNIT1, MAX_UNITS, LOWORD(id), res);
 		if (res >= 0)
 		{
 			SelectedIUnit = res;
@@ -2105,7 +2267,7 @@ bool StackButtonPressed(WPARAM id)
 		}
 		
 		// check down click
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			WORD tid = IDC_ISTACK_DOWN1+i*6;
 			if (LOWORD(id) == tid)
@@ -2114,13 +2276,15 @@ bool StackButtonPressed(WPARAM id)
 				EnableWindow(GetDlgItem(TabWnd[T_INSTRUMENT], tid), false);
 				Go4kVSTi_FlipInstrumentSlots(SelectedInstrument, i, i+1);
 				CheckModulations(i, i+1);
+				LinkInstrumentUnit(SelectedInstrument, i);
+				LinkInstrumentUnit(SelectedInstrument, i+1);
 				UpdateControls(SelectedInstrument);
 				EnableWindow(GetDlgItem(TabWnd[T_INSTRUMENT], tid), true);
 			}			
 		}
 
 		// check up click
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			WORD tid = IDC_ISTACK_UP1+i*6;
 			if (LOWORD(id) == tid)
@@ -2129,13 +2293,15 @@ bool StackButtonPressed(WPARAM id)
 				EnableWindow(GetDlgItem(TabWnd[T_INSTRUMENT], tid), false);
 				Go4kVSTi_FlipInstrumentSlots(SelectedInstrument, i, i-1);
 				CheckModulations(i, i-1);
+				LinkInstrumentUnit(SelectedInstrument, i);
+				LinkInstrumentUnit(SelectedInstrument, i-1);
 				UpdateControls(SelectedInstrument);
 				EnableWindow(GetDlgItem(TabWnd[T_INSTRUMENT], tid), true);
 			}
 		}
 
 		// check set click
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			WORD tid = IDC_ISTACK_SET1+i*6;
 			if (LOWORD(id) == tid)
@@ -2149,6 +2315,7 @@ bool StackButtonPressed(WPARAM id)
 						Go4kVSTi_InitInstrumentSlot(SelectedInstrument, i, SetUnit);
 						CheckModulations(i);
 						SelectedIUnit = i;
+						LinkInstrumentUnit(SelectedInstrument, i);
 						UpdateControls(SelectedInstrument);
 					}
 				}
@@ -2158,7 +2325,7 @@ bool StackButtonPressed(WPARAM id)
 		}
 
 		// check reset click
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			WORD tid = IDC_ISTACK_RESET1+i*6;
 			if (LOWORD(id) == tid)
@@ -2166,7 +2333,9 @@ bool StackButtonPressed(WPARAM id)
 				SynthObjP->InstrumentSignalValid[SelectedInstrument] = 0;
 				EnableWindow(GetDlgItem(TabWnd[T_INSTRUMENT], tid), false);			
 				Go4kVSTi_ClearInstrumentSlot(SelectedInstrument, i);
+				LinkInstrumentUnit(SelectedInstrument, i);
 				CheckModulations(i);
+
 				UpdateControls(SelectedInstrument);
 				EnableWindow(GetDlgItem(TabWnd[T_INSTRUMENT], tid), true);
 			}			
@@ -2175,7 +2344,7 @@ bool StackButtonPressed(WPARAM id)
 	else if (SelectedTab == T_GLOBAL)
 	{
 		// check unit click
-		InterleavedButtonGroupChanged(IDC_GSTACK_UNIT1, MAX_SLOTS, LOWORD(id), res);
+		InterleavedButtonGroupChanged(IDC_GSTACK_UNIT1, MAX_UNITS, LOWORD(id), res);
 		if (res >= 0)
 		{
 			SelectedGUnit = res;
@@ -2183,7 +2352,7 @@ bool StackButtonPressed(WPARAM id)
 		}
 
 		// check down click
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			WORD tid = IDC_GSTACK_DOWN1+i*6;
 			if (LOWORD(id) == tid)
@@ -2198,7 +2367,7 @@ bool StackButtonPressed(WPARAM id)
 		}
 
 		// check up click
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			WORD tid = IDC_GSTACK_UP1+i*6;
 			if (LOWORD(id) == tid)
@@ -2213,7 +2382,7 @@ bool StackButtonPressed(WPARAM id)
 		}
 
 		// check set click
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			WORD tid = IDC_GSTACK_SET1+i*6;
 			if (LOWORD(id) == tid)
@@ -2235,7 +2404,7 @@ bool StackButtonPressed(WPARAM id)
 		}
 
 		// check reset click
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			WORD tid = IDC_GSTACK_RESET1+i*6;
 			if (LOWORD(id) == tid)
@@ -2319,8 +2488,15 @@ void UpdateSignalCount(int channel)
 	int valid = 1;
 	int signalcount = 0;
 	// check stack validity
-	for (int i = 0; i < MAX_SLOTS; i++)
+	SynthObjP->HighestSlotIndex[channel] = 63;
+	int highestSlotIndex = 0;	
+	for (int i = 0; i < MAX_UNITS; i++)
 	{
+		if (SynthObjP->InstrumentValues[channel][i][0] != 0)
+		{
+			if (i >= highestSlotIndex)
+				highestSlotIndex = i;
+		}
 		// check unit precondition
 		int precond = UnitPreSignals[SynthObjP->InstrumentValues[channel][i][0]];
 		// adjust for arithmetic unit (depending on mode)
@@ -2335,12 +2511,28 @@ void UpdateSignalCount(int channel)
 				precond = 1;
 			if (v->flags == FOP_ADDP2)
 				precond = 4;
+			if (v->flags == FOP_MULP2)
+				precond = 4;
+		}
+		// adjust for stereo in vcf (we need 2 signals for stereo)
+		if (SynthObjP->InstrumentValues[channel][i][0] == M_VCF)
+		{
+			VCF_valP v = (VCF_valP)(SynthObjP->InstrumentValues[channel][i]);
+			if (v->type & VCF_STEREO)
+				precond += 1;
+		}
+		// adjust for stereo in dst (we need 2 signals for stereo)
+		if (SynthObjP->InstrumentValues[channel][i][0] == M_DST)
+		{
+			DST_valP v = (DST_valP)(SynthObjP->InstrumentValues[channel][i]);
+			if (v->stereo & VCF_STEREO)
+				precond += 1;
 		}
 		if (signalcount < precond)
 		{
 			valid = 0;
 			Go4kVSTi_ClearInstrumentWorkspace(channel);
-			for (int j = i; j < MAX_SLOTS; j++)
+			for (int j = i; j < MAX_UNITS; j++)
 			{
 				char txt[10];
 				sprintf(txt, "%d", signalcount);
@@ -2369,15 +2561,31 @@ void UpdateSignalCount(int channel)
 					signalcount--;
 				if (v->flags == FOP_ADDP2)
 					signalcount-=2;
+				if (v->flags == FOP_MULP2)
+					signalcount-=2;
 				if (v->flags == FOP_LOADNOTE)
 					signalcount++;
+			}
+			// adjust for stereo in vco (2 signals for stereo)
+			if (SynthObjP->InstrumentValues[channel][i][0] == M_VCO)
+			{
+				VCO_valP v = (VCO_valP)(SynthObjP->InstrumentValues[channel][i]);
+				if (v->flags & VCO_STEREO)
+					signalcount++;
+			}
+			// adjust for pop in store
+			if (SynthObjP->InstrumentValues[channel][i][0] == M_FST)
+			{
+				FST_valP v = (FST_valP)(SynthObjP->InstrumentValues[channel][i]);
+				if (v->type & FST_POP)
+					signalcount--;
 			}
 			// check stack undeflow
 			if (signalcount < 0)
 			{
 				valid = 0;
 				Go4kVSTi_ClearInstrumentWorkspace(channel);
-				for (int j = i; j < MAX_SLOTS; j++)
+				for (int j = i; j < MAX_UNITS; j++)
 				{
 					char txt[10];
 					sprintf(txt, "%d", signalcount);
@@ -2393,7 +2601,7 @@ void UpdateSignalCount(int channel)
 			{
 				valid = 0;
 				Go4kVSTi_ClearInstrumentWorkspace(channel);
-				for (int j = i; j < MAX_SLOTS; j++)
+				for (int j = i; j < MAX_UNITS; j++)
 				{
 					char txt[10];
 					sprintf(txt, "%d", signalcount);
@@ -2427,6 +2635,15 @@ void UpdateSignalCount(int channel)
 			SetWindowText(GetDlgItem(DialogWnd, IDC_ISTACK_VALID), "Signal INVALID! Signal Count != 0 after last unit");
 		}
 	}
+	SynthObjP->HighestSlotIndex[channel] = highestSlotIndex;
+	if (channel < 16)
+	{
+		if (LinkToInstrument[channel] != 16)
+		{
+			SynthObjP->InstrumentSignalValid[LinkToInstrument[channel]] = SynthObjP->InstrumentSignalValid[channel];
+			SynthObjP->HighestSlotIndex[LinkToInstrument[channel]] = SynthObjP->HighestSlotIndex[channel];
+		}
+	}
 
 	//////////////////////////////////////////////////////////////
 	//  global
@@ -2437,8 +2654,15 @@ void UpdateSignalCount(int channel)
 	valid = 1;
 	signalcount = 0;
 	// check stack validity
-	for (int i = 0; i < MAX_SLOTS; i++)
+	SynthObjP->HighestSlotIndex[16] = 63;
+	highestSlotIndex = 0;	
+	for (int i = 0; i < MAX_UNITS; i++)
 	{
+		if (SynthObjP->GlobalValues[i][0] != 0)
+		{
+			if (i >= highestSlotIndex)
+				highestSlotIndex = i;
+		}
 		// check unit precondition
 		int precond = UnitPreSignals[SynthObjP->GlobalValues[i][0]];
 		// adjust for arithmetic unit (depending on mode)
@@ -2453,12 +2677,28 @@ void UpdateSignalCount(int channel)
 				precond = 1;
 			if (v->flags == FOP_ADDP2)
 				precond = 4;
+			if (v->flags == FOP_MULP2)
+				precond = 4;
+		}
+		// adjust for stereo in vcf (we need 2 signals for stereo)
+		if (SynthObjP->GlobalValues[i][0] == M_VCF)
+		{
+			VCF_valP v = (VCF_valP)(SynthObjP->GlobalValues[i]);
+			if (v->type & VCF_STEREO)
+				precond += 1;
+		}
+		// adjust for stereo in dst (we need 2 signals for stereo)
+		if (SynthObjP->GlobalValues[i][0] == M_DST)
+		{
+			DST_valP v = (DST_valP)(SynthObjP->GlobalValues[i]);
+			if (v->stereo & VCF_STEREO)
+				precond += 1;
 		}
 		if (signalcount < precond)
 		{
 			valid = 0;
 			Go4kVSTi_ClearGlobalWorkspace();
-			for (int j = i; j < MAX_SLOTS; j++)
+			for (int j = i; j < MAX_UNITS; j++)
 			{
 				char txt[10];
 				sprintf(txt, "%d", signalcount);
@@ -2487,15 +2727,31 @@ void UpdateSignalCount(int channel)
 					signalcount--;
 				if (v->flags == FOP_ADDP2)
 					signalcount-=2;
+				if (v->flags == FOP_MULP2)
+					signalcount-=2;
 				if (v->flags == FOP_LOADNOTE)
 					signalcount++;
+			}
+			// adjust for stereo in vco (2 signals for stereo)
+			if (SynthObjP->GlobalValues[i][0] == M_VCO)
+			{
+				VCO_valP v = (VCO_valP)(SynthObjP->GlobalValues[i]);
+				if (v->flags & VCO_STEREO)
+					signalcount++;
+			}
+			// adjust for pop in store
+			if (SynthObjP->GlobalValues[i][0] == M_FST)
+			{
+				FST_valP v = (FST_valP)(SynthObjP->GlobalValues[i]);
+				if (v->type & FST_POP)
+					signalcount--;
 			}
 			// check stack undeflow
 			if (signalcount < 0)
 			{
 				valid = 0;
 				Go4kVSTi_ClearGlobalWorkspace();
-				for (int j = i; j < MAX_SLOTS; j++)
+				for (int j = i; j < MAX_UNITS; j++)
 				{
 					char txt[10];
 					sprintf(txt, "%d", signalcount);
@@ -2511,7 +2767,7 @@ void UpdateSignalCount(int channel)
 			{
 				valid = 0;
 				Go4kVSTi_ClearGlobalWorkspace();
-				for (int j = i; j < MAX_SLOTS; j++)
+				for (int j = i; j < MAX_UNITS; j++)
 				{
 					char txt[10];
 					sprintf(txt, "%d", signalcount);
@@ -2545,6 +2801,7 @@ void UpdateSignalCount(int channel)
 			SetWindowText(GetDlgItem(DialogWnd, IDC_GSTACK_VALID), "Signal INVALID! Signal Count != 0 after last unit");
 		}
 	}
+	SynthObjP->HighestSlotIndex[16] = highestSlotIndex;	
 }
 
 void UpdateControls(int channel)
@@ -2552,8 +2809,9 @@ void UpdateControls(int channel)
 	int res;
 	UpdateSignalCount(channel);
 	SetDlgItemText(DialogWnd, IDC_INSTRUMENT_NAME, (LPSTR)&(SynthObjP->InstrumentNames[channel]));
+	SendDlgItemMessage(DialogWnd, IDC_INSTRUMENTLINK, CB_SETCURSEL, (WPARAM)LinkToInstrument[SelectedInstrument], (LPARAM)0);
 	SendDlgItemMessage(DialogWnd, IDC_POLYPHONY, CB_SETCURSEL, (WPARAM)(SynthObjP->Polyphony-1), (LPARAM)0);
-	for (int i = 0; i < MAX_SLOTS; i++)
+	for (int i = 0; i < MAX_UNITS; i++)
 	{
 		// set unit text
 		char unitname[128];
@@ -2562,8 +2820,8 @@ void UpdateControls(int channel)
 		GetUnitString(SynthObjP->GlobalValues[i], unitname);
 		SetWindowText(GetDlgItem(TabWnd[T_GLOBAL], IDC_GSTACK_UNIT1+i*6), unitname);
 	}
-	InterleavedButtonGroupChanged(IDC_ISTACK_UNIT1, MAX_SLOTS, IDC_ISTACK_UNIT1+SelectedIUnit*6, res);
-	InterleavedButtonGroupChanged(IDC_GSTACK_UNIT1, MAX_SLOTS, IDC_GSTACK_UNIT1+SelectedGUnit*6, res);
+	InterleavedButtonGroupChanged(IDC_ISTACK_UNIT1, MAX_UNITS, IDC_ISTACK_UNIT1+SelectedIUnit*6, res);
+	InterleavedButtonGroupChanged(IDC_GSTACK_UNIT1, MAX_UNITS, IDC_GSTACK_UNIT1+SelectedGUnit*6, res);
 	UpdateModuleParamWindow(SelectedTab, -1);
 }
 
@@ -2615,8 +2873,6 @@ void UpdateModule(int uid, BYTE* val)
 		if (v->flags & VCO_SINE)
 		{
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCO], IDC_VCO_SINE), false);
-			EnableWindow(GetDlgItem(ModuleWnd[M_VCO], IDC_VCO_COLOR), false);
-			EnableWindow(GetDlgItem(ModuleWnd[M_VCO], IDC_VCO_COLOR_VAL), false);
 		}
 		else if (v->flags & VCO_TRISAW)
 		{
@@ -2652,6 +2908,7 @@ void UpdateModule(int uid, BYTE* val)
 		WORD gatebits = ((WORD)v->color << 8) | (WORD)v->gate;
 		SetCheckboxGroupBitmask(IDC_VCO_GATE1, IDC_VCO_GATE16, M_VCO, gatebits);
 		SendDlgItemMessage(ModuleWnd[M_VCO], IDC_VCO_LFO, BM_SETCHECK, v->flags & VCO_LFO, 0);	
+		SendDlgItemMessage(ModuleWnd[M_VCO], IDC_VCO_STEREO, BM_SETCHECK, v->flags & VCO_STEREO, 0);
 	}
 	else if (uid == M_VCF)
 	{
@@ -2663,18 +2920,22 @@ void UpdateModule(int uid, BYTE* val)
 
 		// buttons
 		DisableButtonGroup(IDC_VCF_LOW, IDC_VCF_ALL, M_VCF);
-		if (v->type == VCF_LOWPASS)
+
+		int mode = v->type & ~VCF_STEREO;
+		if (mode == VCF_LOWPASS)
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCF], IDC_VCF_LOW), false);
-		else if (v->type == VCF_HIGHPASS)
+		else if (mode == VCF_HIGHPASS)
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCF], IDC_VCF_HIGH), false);
-		else if (v->type == VCF_BANDPASS)
+		else if (mode == VCF_BANDPASS)
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCF], IDC_VCF_BAND), false);
-		else if (v->type == VCF_BANDSTOP)
+		else if (mode == VCF_BANDSTOP)
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCF], IDC_VCF_NOTCH), false);
-		else if (v->type == VCF_PEAK)
+		else if (mode == VCF_PEAK)
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCF], IDC_VCF_PEAK), false);
-		else if (v->type == VCF_ALLPASS)
+		else if (mode == VCF_ALLPASS)
 			EnableWindow(GetDlgItem(ModuleWnd[M_VCF], IDC_VCF_ALL), false);
+
+		SendDlgItemMessage(ModuleWnd[M_VCF], IDC_VCF_STEREO, BM_SETCHECK, v->type & VCF_STEREO, 0);
 	}
 	else if (uid == M_DST)
 	{
@@ -2683,6 +2944,7 @@ void UpdateModule(int uid, BYTE* val)
 		InitSliderCenter(ModuleWnd[uid], IDC_DST_DRIVE, 0, 128, v->drive);
 		// snhfreq
 		InitSlider(ModuleWnd[uid], IDC_DST_SNH, 0, 128, v->snhfreq);
+		SendDlgItemMessage(ModuleWnd[M_DST], IDC_DST_STEREO, BM_SETCHECK, v->stereo & VCF_STEREO, 0);
 	}
 	else if (uid == M_DLL)
 	{
@@ -2751,7 +3013,7 @@ void UpdateModule(int uid, BYTE* val)
 	else if (uid == M_FOP)
 	{
 		FOP_valP v = (FOP_valP)val;
-		DisableButtonGroup(IDC_FOP_POP, IDC_FOP_LOADNOTE, M_FOP);
+		DisableButtonGroup(IDC_FOP_POP, IDC_FOP_MULP2, M_FOP);
 		EnableWindow(GetDlgItem(ModuleWnd[M_FOP], IDC_FOP_POP + v->flags-FOP_POP), false);
 	}
 	else if (uid == M_FST)
@@ -2795,10 +3057,10 @@ void UpdateModule(int uid, BYTE* val)
 
 		SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_UNIT, CB_RESETCONTENT, (WPARAM)0, (LPARAM)0);
 		SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_UNIT, CB_ADDSTRING, (WPARAM)0, (LPARAM)"- Nothing Selected -");
-		for (int i = 0; i < MAX_SLOTS; i++)
+		for (int i = 0; i < MAX_UNITS; i++)
 		{
 			char unitname[128], unitname2[128];
-			sprintf(unitname, "%d: %s", i+1, GetUnitString(&units[i*MAX_SLOT_VALUES], unitname2));
+			sprintf(unitname, "%d: %s", i+1, GetUnitString(&units[i*MAX_UNIT_SLOTS], unitname2));
 			SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_UNIT, CB_ADDSTRING, (WPARAM)0, (LPARAM)unitname);
 		}
 		SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_UNIT, CB_SETCURSEL, (WPARAM)(v->dest_unit+1), (LPARAM)0);
@@ -2814,13 +3076,22 @@ void UpdateModule(int uid, BYTE* val)
 		else
 		{
 			EnableWindow(GetDlgItem(ModuleWnd[M_FST], IDC_FST_DESTINATION_SLOT), true);
-			DWORD unitid = units[v->dest_unit*MAX_SLOT_VALUES];			
+			DWORD unitid = units[v->dest_unit*MAX_UNIT_SLOTS];			
 			for (int i = 0; i < 8; i++)
 			{
 				SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_SLOT, CB_ADDSTRING, (WPARAM)0, (LPARAM)UnitModulationTargetNames[unitid][i]);
 			}
 			SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_DESTINATION_SLOT, CB_SETCURSEL, (WPARAM)(v->dest_slot+1), (LPARAM)0);
 		}
+		// buttons
+		DisableButtonGroup(IDC_FST_SET, IDC_FST_MUL, M_FST);
+		if (v->type & FST_ADD)
+			EnableWindow(GetDlgItem(ModuleWnd[M_FST], IDC_FST_ADD), false);
+		else if (v->type & FST_MUL)
+			EnableWindow(GetDlgItem(ModuleWnd[M_FST], IDC_FST_MUL), false);
+		else
+			EnableWindow(GetDlgItem(ModuleWnd[M_FST], IDC_FST_SET), false);
+		SendDlgItemMessage(ModuleWnd[M_FST], IDC_FST_POP, BM_SETCHECK, v->type & FST_POP, 0);
 	}
 	else if (uid == M_PAN)
 	{
@@ -2961,7 +3232,11 @@ void GetStreamFileName()
 	{'4','k','l','a','n','g',' ','I','n','c','l','u','d','e', 0 ,
 	'*','.','i','n','c', 0, 
 	0};
+#ifdef _4KLANG2
+	char lpstrFile[4096] = "4klang2.inc";
+#else
 	char lpstrFile[4096] = "4klang.inc";
+#endif
 	char lpstrDirectory[4096];
 	GetCurrentDirectory(4096, lpstrDirectory);
 

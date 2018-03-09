@@ -58,7 +58,7 @@ void Go4kVSTi::processAnyhow(float **inputs, float **outputs, long sampleFrames)
 		VstTimeInfo* myTime = getTimeInfo ( kVstTempoValid );
 		Go4kVSTi_SetBPM(myTime->tempo);
 		bpmCheck = 20; // only check every 20th call of this function (bpm shouldnt change that often)
-    }
+	}
 	bpmCheck--;
 
 	int start = 0;
@@ -66,7 +66,7 @@ void Go4kVSTi::processAnyhow(float **inputs, float **outputs, long sampleFrames)
 	if (m_currentEvents.size() > 0)
 	{		
 		// for all events
-        for (unsigned int i = 0; i < m_currentEvents.size(); i++)
+		for (unsigned int i = 0; i < m_currentEvents.size(); i++)
 		{
 			// process samples until next event
 			int todo = m_currentEvents[i]->deltaFrames - start;

@@ -19,7 +19,11 @@ Go4kVSTi::Go4kVSTi (audioMasterCallback audioMaster) : AudioEffectX (audioMaster
 		hasVu (false);
 		hasClip (false);
 		isSynth ();
+#ifdef _8KLANG
+		setUniqueID ('8klg');
+#else
 		setUniqueID ('4klg');
+#endif
 	}
 	initProcess ();
 	suspend ();
@@ -99,7 +103,11 @@ bool Go4kVSTi::copyProgram (long destination)
 //-----------------------------------------------------------------------------------------
 bool Go4kVSTi::getEffectName (char* name)
 {
+#ifdef _8KLANG
+	strcpy (name, "8klang");
+#else
 	strcpy (name, "4klang");
+#endif
 	return true;
 }
 
@@ -113,7 +121,11 @@ bool Go4kVSTi::getVendorString (char* text)
 //-----------------------------------------------------------------------------------------
 bool Go4kVSTi::getProductString (char* text)
 {
+#ifdef _8KLANG
+	strcpy (text, "8klang");
+#else
 	strcpy (text, "4klang");
+#endif
 	return true;
 }
 

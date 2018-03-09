@@ -7,7 +7,7 @@
    global _%1
    _%1:
 %endmacro
-%define USE_SECTIONS
+;%define USE_SECTIONS
 ; //----------------------------------------------------------------------------------------
 ; //	basic defines for the song/synth
 ; //----------------------------------------------------------------------------------------
@@ -52,22 +52,24 @@
 %define		GO4K_USE_VCO_MOD_CM				; // removing this skips color modulation code
 %define		GO4K_USE_VCO_MOD_GM				; // removing this skips gain modulation code
 %define		GO4K_USE_VCO_MOD_SM				; // removing this skips shaping modulation	code
+%define		GO4K_USE_VCO_STEREO				; // removing this skips stereo code
 %define		GO4K_USE_VCF_CHECK				; // removing this skips checks	if processing is needed
 %define		GO4K_USE_VCF_MOD_FM				; // removing this skips frequency modulation code
 %define		GO4K_USE_VCF_MOD_RM				; // removing this skips resonance modulation code
 %define		GO4K_USE_VCF_HIGH				; // removing this skips code for high output
 %define		GO4K_USE_VCF_BAND				; // removing this skips code for band output
 %define		GO4K_USE_VCF_PEAK				; // removing this skips code for peak output
+%define		GO4K_USE_VCF_STEREO				; // removing this skips code for stereo filter output
 %define		GO4K_USE_DST_CHECK				; // removing this skips checks	if processing is needed
 %define		GO4K_USE_DST_SH					; // removing this skips sample	and	hold code
 %define		GO4K_USE_DST_MOD_DM				; // removing this skips distortion	modulation code
 %define		GO4K_USE_DST_MOD_SH				; // removing this skips sample	and	hold modulation	code
+%define		GO4K_USE_DST_STEREO				; // removing this skips stereo processing
 %define		GO4K_USE_DLL_NOTE_SYNC			; // removing this will	skip delay length adjusting	code (karplus strong)
 %define		GO4K_USE_DLL_CHORUS				; // removing this will	skip delay chorus/flanger code
 %define		GO4K_USE_DLL_CHORUS_CLAMP		; // removing this will skip chorus lfo phase clamping
 %define		GO4K_USE_DLL_DAMP				; // removing this will	skip dll damping code
 %define		GO4K_USE_DLL_DC_FILTER			; // removing this will	skip dll dc	offset removal code
-%define		GO4K_USE_FOP_LOADNOTE			; // removing this will	skip load note code
 %define		GO4K_USE_FSTG_CHECK				; // removing this skips checks	if processing is needed
 %define		GO4K_USE_PAN_MOD				; // removing this will	skip panning modulation	code
 %define		GO4K_USE_OUT_MOD_AM				; // removing this skips output	aux	send modulation	code
@@ -86,11 +88,12 @@
 ; // synth defines
 ; //----------------------------------------------------------------------------------------
 %define	MAX_DELAY			65536
-%define	MAX_WORKSPACE_SLOTS	8
-%define	GO4K_BEGIN_CMDDEF(def_name)
-%define	GO4K_END_CMDDEF	db 0
-%define	GO4K_BEGIN_PARAMDEF(def_name)
-%define	GO4K_END_PARAMDEF
+%define MAX_UNITS			64
+%define	MAX_UNIT_SLOTS		16
+%define GO4K_BEGIN_CMDDEF(def_name)
+%define GO4K_END_CMDDEF db 0
+%define GO4K_BEGIN_PARAMDEF(def_name)
+%define GO4K_END_PARAMDEF
 ; //----------------------------------------------------------------------------------------
 ; // ENV structs
 ; //----------------------------------------------------------------------------------------
@@ -168,6 +171,7 @@ GO4K_VCO_ID		equ		2
 %define	NOISE		0x08
 %define	LFO			0x10
 %define	GATE		0x20
+%define	VCO_STEREO	0x40
 struc	go4kVCO_val
 ;//	unit paramters
 	.transpose	resd	1
@@ -197,6 +201,8 @@ struc	go4kVCO_wrk
 	.cm			resd	1
 	.sm			resd	1
 	.gm			resd	1
+;// stero variables	
+	.phase2		resd	1
 	.size
 endstruc
 ; //----------------------------------------------------------------------------------------
@@ -214,6 +220,7 @@ GO4K_VCF_ID		equ		3
 %define	BANDSTOP	0x3
 %define	ALLPASS		0x7
 %define	PEAK		0x8
+%define STEREO		0x10
 %define	FREQUENCY(val)	val
 %define	RESONANCE(val)	val
 %define	VCFTYPE(val)	val
@@ -229,38 +236,54 @@ struc	go4kVCF_wrk
 	.low		resd	1
 	.high		resd	1
 	.band		resd	1
-	.freq		resd	1
+	.freq		resd	1 ;// unused but kept so modulation target offsets stay same
 ;//	modulation targets
 	.fm			resd	1
-	.rm			resd	1	
+	.rm			resd	1
+;// stereo variables	
+	.low2		resd	1
+	.high2		resd	1
+	.band2		resd	1	
 	.size
 endstruc
 ; //----------------------------------------------------------------------------------------
 ; // DST structs
 ; //----------------------------------------------------------------------------------------
 GO4K_DST_ID		equ		4
-%macro	GO4K_DST 2
+%macro	GO4K_DST 3
 	db	%1
 %ifdef GO4K_USE_DST_SH	
 	db	%2
-%endif	
+	%ifdef GO4K_USE_DST_STEREO	
+		db	%3
+	%endif
+%else
+	%ifdef GO4K_USE_DST_STEREO	
+		db	%3
+	%endif
+%endif
 %endmacro
 %define	DRIVE(val)		val
 %define	SNHFREQ(val)	val
+%define	FLAGS(val)		val
 struc	go4kDST_val
 ;//	unit paramters
 	.drive		resd	1
 %ifdef GO4K_USE_DST_SH	
 	.snhfreq	resd	1
 %endif	
+	.flags		resd	1
 	.size
 endstruc
 struc	go4kDST_wrk
+;//	work variables
 	.out		resd	1
 	.snhphase	resd	1
 ;//	modulation targets
 	.dm			resd	1
 	.sm			resd	1
+;// stereo variables
+	.out2		resd	1
 	.size
 endstruc
 ; //----------------------------------------------------------------------------------------
@@ -342,6 +365,7 @@ GO4K_FOP_ID	equ			6
 %define	FOP_MUL			0x7
 %define	FOP_ADDP2		0x8
 %define FOP_LOADNOTE	0x9
+%define	FOP_MULP2		0xa
 struc	go4kFOP_val
 	.flags		resd	1
 	.size
@@ -355,10 +379,13 @@ endstruc
 GO4K_FST_ID		equ		7
 %macro	GO4K_FST 2
 	db	%1
-	db	%2
+	dw	%2
 %endmacro
 %define	AMOUNT(val)		val
 %define	DEST(val)		val
+%define	FST_SET			0x0000
+%define	FST_ADD			0x4000
+%define	FST_POP			0x8000
 struc	go4kFST_val
 	.amount		resd	1
 	.op1		resd	1
@@ -455,7 +482,7 @@ endstruc
 GO4K_FSTG_ID	equ		12
 %macro	GO4K_FSTG 2
 	db	%1
-	dd	%2
+	dw	%2
 %endmacro
 struc	go4kFSTG_val
 	.amount		resd	1
@@ -472,7 +499,7 @@ endstruc
 struc	go4k_instrument
 	.release	resd	1
 	.note		resd	1
-	.workspace	resd	256
+	.workspace	resd	MAX_UNITS*MAX_UNIT_SLOTS
 	.dlloutl	resd	1
 	.dlloutr	resd	1
 	.outl		resd	1
@@ -723,18 +750,18 @@ section .data
 go4k_synth_parameter_values
 GO4K_BEGIN_PARAMDEF(Instrument0)
 	GO4K_ENV	ATTAC(72),DECAY(96),SUSTAIN(96),RELEASE(88),GAIN(128)
-	GO4K_FST	AMOUNT(64),DEST(0*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(64),DEST(0*MAX_UNIT_SLOTS+2)
 	GO4K_VCO	TRANSPOSE(64),DETUNE(60),PHASE(32),GATES(0),COLOR(80),SHAPE(64),GAIN(128),FLAGS(PULSE)
 	GO4K_VCO	TRANSPOSE(64),DETUNE(72),PHASE(32),GATES(0),COLOR(96),SHAPE(64),GAIN(128),FLAGS(TRISAW)
 	GO4K_VCO	TRANSPOSE(32),DETUNE(64),PHASE(0),GATES(0),COLOR(64),SHAPE(96),GAIN(128),FLAGS(SINE|LFO)
-	GO4K_FST	AMOUNT(68),DEST(2*MAX_WORKSPACE_SLOTS+2)
-	GO4K_FST	AMOUNT(61),DEST(3*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(68),DEST(2*MAX_UNIT_SLOTS+2)
+	GO4K_FST	AMOUNT(61),DEST(3*MAX_UNIT_SLOTS+2)
 	GO4K_FOP	OP(FOP_POP)
 	GO4K_FOP	OP(FOP_ADDP)
 	GO4K_FOP	OP(FOP_MULP)
 	GO4K_VCF	FREQUENCY(26),RESONANCE(128),VCFTYPE(PEAK)
 	GO4K_VCF	FREQUENCY(64),RESONANCE(64),VCFTYPE(LOWPASS)
-	GO4K_DST	DRIVE(104),	SNHFREQ(128)
+	GO4K_DST	DRIVE(104),	SNHFREQ(128), FLAGS(0)
 	GO4K_PAN	PANNING(64)
 	GO4K_DLL	PREGAIN(96),DRY(128),FEEDBACK(96),DAMP(64),FREQUENCY(0),DEPTH(0),DELAY(16),COUNT(1)
 	GO4K_FOP	OP(FOP_XCH)
@@ -744,18 +771,18 @@ GO4K_BEGIN_PARAMDEF(Instrument0)
 GO4K_END_PARAMDEF
 GO4K_BEGIN_PARAMDEF(Instrument1)
 	GO4K_ENV	ATTAC(72),DECAY(96),SUSTAIN(96),RELEASE(88),GAIN(128)
-	GO4K_FST	AMOUNT(64),DEST(0*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(64),DEST(0*MAX_UNIT_SLOTS+2)
 	GO4K_VCO	TRANSPOSE(64),DETUNE(60),PHASE(32),GATES(0),COLOR(80),SHAPE(64),GAIN(128),FLAGS(TRISAW)
 	GO4K_VCO	TRANSPOSE(64),DETUNE(72),PHASE(32),GATES(0),COLOR(96),SHAPE(112),GAIN(64),FLAGS(SINE)
 	GO4K_VCO	TRANSPOSE(80),DETUNE(112),PHASE(0),GATES(0),COLOR(64),SHAPE(16),GAIN(128),FLAGS(PULSE|LFO)
-	GO4K_FST	AMOUNT(68),DEST(2*MAX_WORKSPACE_SLOTS+2)
-	GO4K_FST	AMOUNT(60),DEST(3*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(68),DEST(2*MAX_UNIT_SLOTS+2)
+	GO4K_FST	AMOUNT(60),DEST(3*MAX_UNIT_SLOTS+2)
 	GO4K_FOP	OP(FOP_POP)
 	GO4K_FOP	OP(FOP_ADDP)
 	GO4K_FOP	OP(FOP_MULP)
 	GO4K_VCF	FREQUENCY(80),RESONANCE(24),VCFTYPE(LOWPASS)
 	GO4K_VCF	FREQUENCY(48),RESONANCE(24),VCFTYPE(HIGHPASS)
-	GO4K_DST	DRIVE(64), SNHFREQ(128)
+	GO4K_DST	DRIVE(64), SNHFREQ(128), FLAGS(0)
 	GO4K_PAN	PANNING(64)
 	GO4K_DLL	PREGAIN(96),DRY(128),FEEDBACK(96),DAMP(64),FREQUENCY(0),DEPTH(0),DELAY(16),COUNT(1)
 	GO4K_FOP	OP(FOP_XCH)
@@ -765,18 +792,18 @@ GO4K_BEGIN_PARAMDEF(Instrument1)
 GO4K_END_PARAMDEF
 GO4K_BEGIN_PARAMDEF(Instrument2)
 	GO4K_ENV	ATTAC(32),DECAY(64),SUSTAIN(64),RELEASE(64),GAIN(64)
-	GO4K_FST	AMOUNT(120),DEST(0*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(120),DEST(0*MAX_UNIT_SLOTS+2)
 	GO4K_VCO	TRANSPOSE(64),DETUNE(64),PHASE(32),GATES(0),COLOR(80),SHAPE(64),GAIN(128),FLAGS(PULSE)
 	GO4K_VCO	TRANSPOSE(64),DETUNE(72),PHASE(32),GATES(0),COLOR(96),SHAPE(64),GAIN(128),FLAGS(TRISAW)
 	GO4K_VCO	TRANSPOSE(32),DETUNE(64),PHASE(0),GATES(0),COLOR(64),SHAPE(96),GAIN(128),FLAGS(SINE|LFO)
-	GO4K_FST	AMOUNT(68),DEST(2*MAX_WORKSPACE_SLOTS+2)
-	GO4K_FST	AMOUNT(60),DEST(3*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(68),DEST(2*MAX_UNIT_SLOTS+2)
+	GO4K_FST	AMOUNT(60),DEST(3*MAX_UNIT_SLOTS+2)
 	GO4K_FOP	OP(FOP_POP)
 	GO4K_FOP	OP(FOP_ADDP)
 	GO4K_FOP	OP(FOP_MULP)
 	GO4K_VCF	FREQUENCY(18),RESONANCE(64),VCFTYPE(PEAK)
 	GO4K_VCF	FREQUENCY(32),RESONANCE(48),VCFTYPE(LOWPASS)
-	GO4K_DST	DRIVE(88), SNHFREQ(128)
+	GO4K_DST	DRIVE(88), SNHFREQ(128), FLAGS(0)
 	GO4K_PAN	PANNING(64)
 	GO4K_DLL	PREGAIN(64),DRY(128),FEEDBACK(96),DAMP(64),FREQUENCY(0),DEPTH(0),DELAY(16),COUNT(1)
 	GO4K_FOP	OP(FOP_XCH)
@@ -786,7 +813,7 @@ GO4K_BEGIN_PARAMDEF(Instrument2)
 GO4K_END_PARAMDEF
 GO4K_BEGIN_PARAMDEF(Instrument3)
 	GO4K_ENV	ATTAC(0),DECAY(76),SUSTAIN(0),RELEASE(0),GAIN(32)
-	GO4K_FST	AMOUNT(128),DEST(0*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(128),DEST(0*MAX_UNIT_SLOTS+2)
 	GO4K_VCO	TRANSPOSE(64),DETUNE(64),PHASE(64),GATES(0),COLOR(64),SHAPE(64),GAIN(128),FLAGS(NOISE)
 	GO4K_FOP	OP(FOP_MULP)
 	GO4K_VCF	FREQUENCY(80),RESONANCE(128),VCFTYPE(LOWPASS)
@@ -795,10 +822,10 @@ GO4K_BEGIN_PARAMDEF(Instrument3)
 GO4K_END_PARAMDEF
 GO4K_BEGIN_PARAMDEF(Instrument4)
 	GO4K_ENV	ATTAC(0),DECAY(64),SUSTAIN(96),RELEASE(64),GAIN(128)
-	GO4K_FST	AMOUNT(128),DEST(0*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(128),DEST(0*MAX_UNIT_SLOTS+2)
 	GO4K_ENV	ATTAC(0),DECAY(70),SUSTAIN(0),RELEASE(0),GAIN(128)
-	GO4K_DST	DRIVE(32), SNHFREQ(128)
-	GO4K_FST	AMOUNT(80),DEST(6*MAX_WORKSPACE_SLOTS+1)
+	GO4K_DST	DRIVE(32), SNHFREQ(128), FLAGS(0)
+	GO4K_FST	AMOUNT(80),DEST(6*MAX_UNIT_SLOTS+1)
 	GO4K_FOP	OP(FOP_POP)
 	GO4K_VCO	TRANSPOSE(46),DETUNE(64),PHASE(0),GATES(0),COLOR(64),SHAPE(64),GAIN(128),FLAGS(TRISAW)
 	GO4K_FOP	OP(FOP_MULP)
@@ -819,10 +846,10 @@ GO4K_BEGIN_PARAMDEF(Instrument5)
 GO4K_END_PARAMDEF
 GO4K_BEGIN_PARAMDEF(Instrument6)
 	GO4K_ENV	ATTAC(0),DECAY(72),SUSTAIN(0),RELEASE(72),GAIN(128)
-	GO4K_FST	AMOUNT(128),DEST(0*MAX_WORKSPACE_SLOTS+2)
+	GO4K_FST	AMOUNT(128),DEST(0*MAX_UNIT_SLOTS+2)
 	GO4K_ENV	ATTAC(0),DECAY(56),SUSTAIN(0),RELEASE(0),GAIN(128)
-	GO4K_FST	AMOUNT(108),DEST(6*MAX_WORKSPACE_SLOTS+1)
-	GO4K_FST	AMOUNT(72),DEST(7*MAX_WORKSPACE_SLOTS+1)
+	GO4K_FST	AMOUNT(108),DEST(6*MAX_UNIT_SLOTS+1)
+	GO4K_FST	AMOUNT(72),DEST(7*MAX_UNIT_SLOTS+1)
 	GO4K_FOP	OP(FOP_POP)
 	GO4K_VCO	TRANSPOSE(32),DETUNE(64),PHASE(0),GATES(0),COLOR(64),SHAPE(32),GAIN(64),FLAGS(SINE)
 	GO4K_VCO	TRANSPOSE(64),DETUNE(64),PHASE(0),GATES(0),COLOR(64),SHAPE(80),GAIN(64),FLAGS(SINE)
@@ -850,8 +877,8 @@ GO4K_BEGIN_PARAMDEF(Instrument8)
 	GO4K_ENV	ATTAC(0),DECAY(0),SUSTAIN(128),RELEASE(0),GAIN(128)
 	GO4K_VCO	TRANSPOSE(48),DETUNE(64),PHASE(0),GATES(0),COLOR(64),SHAPE(64),GAIN(128),FLAGS(TRISAW|LFO)
 	GO4K_FOP	OP(FOP_MULP)
-	GO4K_FSTG	AMOUNT(72),DEST(2*go4k_instrument.size*MAX_VOICES+10*MAX_WORKSPACE_SLOTS*4+4*4+go4k_instrument.workspace)
-	GO4K_FSTG	AMOUNT(66),DEST(1*go4k_instrument.size*MAX_VOICES+10*MAX_WORKSPACE_SLOTS*4+4*4+go4k_instrument.workspace)
+	GO4K_FSTG	AMOUNT(72),DEST(2*go4k_instrument.size*MAX_VOICES+10*MAX_UNIT_SLOTS*4+4*4+go4k_instrument.workspace)
+	GO4K_FSTG	AMOUNT(66),DEST(1*go4k_instrument.size*MAX_VOICES+10*MAX_UNIT_SLOTS*4+4*4+go4k_instrument.workspace)
 	GO4K_FOP	OP(FOP_POP)
 GO4K_END_PARAMDEF
 ;//	global parameters

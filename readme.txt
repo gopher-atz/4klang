@@ -86,7 +86,27 @@ same with the patch and song data. the more repetitive parameter values and the 
 
 apart from that, try understanding what each unit effectively does before doing really fancy stuff with ist :) start simple and get more complex over time (especially when doing cross modulations from one instrument to another).
 
+-----------------------------
+Info for version 3.11
+-----------------------------
 
+this is a more or less experimental version mainly for use in 8k context.
+
+version 3.11 also introduces a new file format to enable the new features. autoconvert again should happen automagically
+
+biggest change is the existence of a second plugin called 8klang. it basically is a second 4klang plugin just that ich can be used to have additional 16 instruments.
+you can only have modulations across channels within each plugin (so not across the plugins).
+when you record a song with both plugins active, be sure to stop recording on the 4klang plugin first, then on the 8klang plugin.
+the 8klang plugin will then try to merge things (thats the experimental part, it did work for us in 8ks so far, but you never know :))
+
+also a couple of new features are available:
+- extension to 64 slots for each instrument.
+- stereo flags for some nodes where possible (oscillator, filter, distortion)
+- some additions to the arithmetic unit
+- instrument link option, so when you have the same instrument loaded in several channels for e.g. playing chords you can now change one instrument and the others will apply the same changes.
+
+a nice tutorial for some of those features and sound design in general can be found here (thank you wayfinder):
+https://www.youtube.com/watch?v=wP__g_9FT4M
 
 for questions, bug reports, rants ... mail to: atz4klangATuntergrundDOTnet
 or catch us on IRC (#atz on IRCNet)

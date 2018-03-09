@@ -66,14 +66,12 @@ void Go4kVSTi_LoadUnit(char* filename, BYTE* slot);
 // save unit date from specified slot
 void Go4kVSTi_SaveUnit(char* filename, BYTE* slot);
 
-#define EXPORT_OBJECT_FILE_
 void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, int useenotevalues, int clipoutput, int undenormalize, int objformat, int output16);
 
 #define MAX_POLYPHONY		2
 #define MAX_INSTRUMENTS		16
-#define MAX_SLOT_VALUES		32
-
-#define MAX_SLOTS			32
+#define MAX_UNITS			64
+#define MAX_UNIT_SLOTS		16
 
 enum UnitID
 {
@@ -120,6 +118,7 @@ typedef struct ENV_val
 #define VCO_NOISE		0x08
 #define VCO_LFO			0x10
 #define VCO_GATE		0x20
+#define	VCO_STEREO		0x40
 typedef struct VCO_val
 {
 	BYTE	id;
@@ -153,6 +152,7 @@ typedef struct VCO11_val
 #define	VCF_BANDSTOP	0x3
 #define VCF_ALLPASS		0x7
 #define	VCF_PEAK		0x8
+#define	VCF_STEREO		0x10
 typedef struct VCF_val
 {
 	BYTE	id;
@@ -167,6 +167,7 @@ typedef struct DST_val
 	BYTE	id;
 	BYTE	drive;
 	BYTE	snhfreq;
+	BYTE	stereo;
 // GUI STUFF
 } *DST_valP;
 
@@ -213,17 +214,22 @@ typedef struct DLL10_val
 #define FOP_MUL			0x7
 #define FOP_ADDP2		0x8
 #define FOP_LOADNOTE	0x9
+#define FOP_MULP2		0xa
 typedef struct FOP_val
 {
 	BYTE	id;
 	BYTE	flags;
 } *FOP_valP;
 
+#define	FST_SET			0x00
+#define	FST_ADD			0x10
+#define	FST_MUL			0x20
+#define	FST_POP			0x40
 typedef struct FST_val
 {
 	BYTE	id;
 	BYTE	amount;
-	BYTE	dest;
+	BYTE	type;
 // GUI STUFF
 	char	dest_stack;
 	char	dest_unit;
@@ -269,7 +275,7 @@ typedef struct InstrumentWorkspace
 {
 	DWORD	release;
 	DWORD	note;
-	float	workspace[256];
+	float	workspace[MAX_UNITS*MAX_UNIT_SLOTS];
 	float	dlloutl;
 	float	dlloutr;
 	float	outl;
@@ -280,8 +286,8 @@ typedef struct SynthObject
 {
 	DWORD Polyphony;
 	char InstrumentNames[MAX_INSTRUMENTS][64];
-	BYTE InstrumentValues[MAX_INSTRUMENTS][MAX_SLOTS][MAX_SLOT_VALUES];		// 16 instruments a 32 slots a 32 dowrds
-	BYTE GlobalValues[MAX_SLOTS][MAX_SLOT_VALUES];								// 32 slots a 32 dwords
+	BYTE InstrumentValues[MAX_INSTRUMENTS][MAX_UNITS][MAX_UNIT_SLOTS];		// 16 instruments a 32 slots a 32 dowrds
+	BYTE GlobalValues[MAX_UNITS][MAX_UNIT_SLOTS];								// 32 slots a 32 dwords
 	InstrumentWorkspace InstrumentWork[MAX_INSTRUMENTS*MAX_POLYPHONY];
 	InstrumentWorkspace GlobalWork;
 	DWORD InstrumentSignalValid[MAX_INSTRUMENTS];
@@ -289,6 +295,7 @@ typedef struct SynthObject
 	float SignalTrace[MAX_INSTRUMENTS];
 	int ControlInstrument[MAX_INSTRUMENTS];
 	int VoiceIndex[MAX_INSTRUMENTS];
+	int HighestSlotIndex[17];
 } *SynthObjectP;
 
 SynthObjectP Go4kVSTi_GetSynthObject();

@@ -14,7 +14,8 @@
 DWORD versiontag10 = 0x30316b34; // 4k10
 DWORD versiontag11 = 0x31316b34; // 4k11
 DWORD versiontag12 = 0x32316b34; // 4k12
-DWORD versiontag   = 0x33316b34; // 4k13
+DWORD versiontag13 = 0x33316b34; // 4k13
+DWORD versiontag   = 0x34316b34; // 4k14
 
 static SynthObject SynthObj;
 
@@ -96,11 +97,11 @@ void Go4kVSTi_Init()
 
 void Go4kVSTi_ClearInstrumentSlot(char channel, int slot)
 {
-	memset(SynthObj.InstrumentValues[channel][slot], 0, MAX_SLOT_VALUES);
+	memset(SynthObj.InstrumentValues[channel][slot], 0, MAX_UNIT_SLOTS);
 	for (int i = 0; i < MAX_POLYPHONY; i++)
 	{
-		float* w = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+i].workspace[slot*8]);
-		memset(w, 0, 8*4);
+		float* w = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+i].workspace[slot*MAX_UNIT_SLOTS]);
+		memset(w, 0, MAX_UNIT_SLOTS*4);
 	}
 }
 
@@ -119,7 +120,7 @@ void Go4kVSTi_ResetInstrument(char channel)
 
 	// clear values
 	BYTE* v = SynthObj.InstrumentValues[channel][0];
-	memset(v, 0, MAX_SLOTS*MAX_SLOT_VALUES);
+	memset(v, 0, MAX_UNITS*MAX_UNIT_SLOTS);
 
 	// clear workspace
 	InstrumentWorkspace* w = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY]);
@@ -129,23 +130,25 @@ void Go4kVSTi_ResetInstrument(char channel)
 	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][0], channel, M_ENV);
 	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][1], channel, M_VCO);
 	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][2], channel, M_FOP); ((FOP_valP)(SynthObj.InstrumentValues[channel][2]))->flags = FOP_MULP;
-	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][22], channel, M_DLL);
-	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][23], channel, M_PAN);
-	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][24], channel, M_OUT);
+	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][3], channel, M_DLL);
+	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][4], channel, M_PAN);
+	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][5], channel, M_OUT);
 
+	SynthObj.HighestSlotIndex[channel] = 5;
 	SynthObj.InstrumentSignalValid[channel] = 1;
 	SynthObj.SignalTrace[channel] = 0.0f;
 	SynthObj.ControlInstrument[channel] = 0;
 	SynthObj.VoiceIndex[channel] = 0;
+	
 
 	Go4kVSTi_ClearDelayLines();
 }
 
 void Go4kVSTi_ClearGlobalSlot(int slot)
 {
-	memset(SynthObj.GlobalValues[slot], 0, MAX_SLOT_VALUES);
-	float* w = &(SynthObj.GlobalWork.workspace[slot*8]);
-	memset(w, 0, 8*4);
+	memset(SynthObj.GlobalValues[slot], 0, MAX_UNIT_SLOTS);
+	float* w = &(SynthObj.GlobalWork.workspace[slot*MAX_UNIT_SLOTS]);
+	memset(w, 0, MAX_UNIT_SLOTS*4);
 }
 
 void Go4kVSTi_ClearGlobalWorkspace()
@@ -157,7 +160,7 @@ void Go4kVSTi_ClearGlobalWorkspace()
 void Go4kVSTi_ResetGlobal()
 {
 	// clear values
-	memset(SynthObj.GlobalValues, 0, MAX_SLOTS*MAX_SLOT_VALUES);
+	memset(SynthObj.GlobalValues, 0, MAX_UNITS*MAX_UNIT_SLOTS);
 
 	// clear workspace
 	memset(&(SynthObj.GlobalWork), 0, sizeof(InstrumentWorkspace));
@@ -178,9 +181,10 @@ void Go4kVSTi_ResetGlobal()
 	Go4kVSTi_InitSlot(SynthObj.GlobalValues[4], 16, M_FOP); ((FOP_valP)(SynthObj.GlobalValues[4]))->flags = FOP_XCH;
 	Go4kVSTi_InitSlot(SynthObj.GlobalValues[5], 16, M_ACC); 
 	Go4kVSTi_InitSlot(SynthObj.GlobalValues[6], 16, M_FOP); ((FOP_valP)(SynthObj.GlobalValues[6]))->flags = FOP_ADDP2;
-	Go4kVSTi_InitSlot(SynthObj.GlobalValues[24], 16, M_OUT); 
-	
-	SynthObj.GlobalSignalValid = 1;
+	Go4kVSTi_InitSlot(SynthObj.GlobalValues[7], 16, M_OUT); 
+
+	SynthObj.HighestSlotIndex[16] = 7;
+	SynthObj.GlobalSignalValid = 1;	
 
 	PatternSize = 16;
 
@@ -202,50 +206,62 @@ void Go4kVSTi_ResetPatch()
 
 void Go4kVSTi_FlipInstrumentSlots(char channel, int a, int b)
 {
-	DWORD temp[MAX_SLOT_VALUES];
+	int s = a;
+	if (b > a)
+		s = b;
+	if (s >= SynthObj.HighestSlotIndex[channel])
+		SynthObj.HighestSlotIndex[channel] = s;
+
+	DWORD temp[MAX_UNIT_SLOTS];
 	BYTE* v1 = SynthObj.InstrumentValues[channel][a];
 	BYTE* v2 = SynthObj.InstrumentValues[channel][b];
-	memcpy(temp, v2, MAX_SLOT_VALUES);
-	memcpy(v2, v1, MAX_SLOT_VALUES);
-	memcpy(v1, temp, MAX_SLOT_VALUES);
+	memcpy(temp, v2, MAX_UNIT_SLOTS);
+	memcpy(v2, v1, MAX_UNIT_SLOTS);
+	memcpy(v1, temp, MAX_UNIT_SLOTS);
 	for (int i = 0; i < MAX_POLYPHONY; i++)
 	{
-		float* w1 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+i].workspace[a*8]);
-		float* w2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+i].workspace[b*8]);
-		memcpy(temp, w2, 8*4);
-		memcpy(w2, w1, 8*4);
-		memcpy(w1, temp, 8*4);
+		float* w1 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+i].workspace[a*MAX_UNIT_SLOTS]);
+		float* w2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+i].workspace[b*MAX_UNIT_SLOTS]);
+		memcpy(temp, w2, MAX_UNIT_SLOTS*4);
+		memcpy(w2, w1, MAX_UNIT_SLOTS*4);
+		memcpy(w1, temp, MAX_UNIT_SLOTS*4);
 	}
 	// reset dll workspaces, they are invalid now
 	if (v1[0] == M_DLL && v2[0] == M_DLL)
 	{
 		Go4kVSTi_ClearDelayLines();
 		Go4kVSTi_UpdateDelayTimes();
-	}
+	}	
 }
 
 void Go4kVSTi_FlipGlobalSlots(int a, int b)
 {
-	DWORD temp[MAX_SLOT_VALUES];
+	int s = a;
+	if (b > a)
+		s = b;
+	if (s >= SynthObj.HighestSlotIndex[16])
+		SynthObj.HighestSlotIndex[16] = s;
+
+	DWORD temp[MAX_UNIT_SLOTS];
 	BYTE* v1 = SynthObj.GlobalValues[a];
 	BYTE* v2 = SynthObj.GlobalValues[b];
-	memcpy(temp, v2, MAX_SLOT_VALUES);
-	memcpy(v2, v1, MAX_SLOT_VALUES);
-	memcpy(v1, temp, MAX_SLOT_VALUES);
+	memcpy(temp, v2, MAX_UNIT_SLOTS);
+	memcpy(v2, v1, MAX_UNIT_SLOTS);
+	memcpy(v1, temp, MAX_UNIT_SLOTS);
 	for (int i = 0; i < MAX_POLYPHONY; i++)
 	{
-		float* w1 = &(SynthObj.GlobalWork.workspace[a*8]);
-		float* w2 = &(SynthObj.GlobalWork.workspace[b*8]);
-		memcpy(temp, w2, 8*4);
-		memcpy(w2, w1, 8*4);
-		memcpy(w1, temp, 8*4);
+		float* w1 = &(SynthObj.GlobalWork.workspace[a*MAX_UNIT_SLOTS]);
+		float* w2 = &(SynthObj.GlobalWork.workspace[b*MAX_UNIT_SLOTS]);
+		memcpy(temp, w2, MAX_UNIT_SLOTS*4);
+		memcpy(w2, w1, MAX_UNIT_SLOTS*4);
+		memcpy(w1, temp, MAX_UNIT_SLOTS*4);
 	}
 	// reset dll workspaces, they are invalid now
 	if (v1[0] == M_DLL && v2[0] == M_DLL)
 	{
 		Go4kVSTi_ClearDelayLines();
 		Go4kVSTi_UpdateDelayTimes();
-	}
+	}	
 }
 
 // init a unit slot
@@ -286,6 +302,7 @@ void Go4kVSTi_InitSlot(BYTE* slot, int channel, int type)
 		DST_valP v = (DST_valP)slot;
 		v->drive		=  64;
 		v->snhfreq		= 128;
+		v->stereo		=   0;
 	}
 	if (type == M_DLL)
 	{
@@ -312,6 +329,7 @@ void Go4kVSTi_InitSlot(BYTE* slot, int channel, int type)
 	{
 		FST_valP v = (FST_valP)slot;
 		v->amount		=  64;
+		v->type			= FST_SET;
 		v->dest_stack	= -1;
 		v->dest_unit	= -1;
 		v->dest_slot	= -1;
@@ -343,6 +361,8 @@ void Go4kVSTi_InitSlot(BYTE* slot, int channel, int type)
 // init a instrument slot
 void Go4kVSTi_InitInstrumentSlot(char channel, int s, int type)
 {
+	if (s >= SynthObj.HighestSlotIndex[channel])
+		SynthObj.HighestSlotIndex[channel] = s;
 	// clear values and workspace
 	Go4kVSTi_ClearInstrumentSlot(channel, s);
 	// init with default values
@@ -351,12 +371,14 @@ void Go4kVSTi_InitInstrumentSlot(char channel, int s, int type)
 	{
 		Go4kVSTi_ClearDelayLines();
 		Go4kVSTi_UpdateDelayTimes();
-	}
+	}	
 }
 
 // init a global slot
 void Go4kVSTi_InitGlobalSlot(int s, int type)
 {
+	if (s >= SynthObj.HighestSlotIndex[16])
+		SynthObj.HighestSlotIndex[16] = s;
 	// clear values and workspace
 	Go4kVSTi_ClearGlobalSlot(s);
 	// init with default values
@@ -365,7 +387,7 @@ void Go4kVSTi_InitGlobalSlot(int s, int type)
 	{
 		Go4kVSTi_ClearDelayLines();
 		Go4kVSTi_UpdateDelayTimes();
-	}
+	}	
 }
 
 // panic
@@ -425,7 +447,7 @@ void Go4kVSTi_UpdateDelayTimes()
 	int delayindex = 17;
 	for (int i = 0; i <= MAX_INSTRUMENTS; i++)
 	{
-		for (int u = 0; u < MAX_SLOTS; u++)
+		for (int u = 0; u < MAX_UNITS; u++)
 		{
 			DLL_valP v;
 			if (i < MAX_INSTRUMENTS)
@@ -486,7 +508,7 @@ void Go4kVSTi_UpdateDelayTimes()
 // clear delay lines
 void Go4kVSTi_ClearDelayLines()
 {
-	memset((&go4k_delay_buffer), 0, 80*((65536+4)*4));
+	memset((&go4k_delay_buffer), 0, 16*16*((65536+5)*4));
 }
 
 // set global bpm
@@ -521,277 +543,330 @@ void Go4kVSTi_Solo(int channel, int solo)
 
 void Go4kVSTi_Tick(float *oleft, float *oright, int samples)
 {
-	// do as many samples as requested
-	int s = 0;
-	while (s < samples)
-	{
-		float left=0.0f;
-		float right=0.0f;
-		
-		go4k_delay_buffer_ofs = (DWORD)(&go4k_delay_buffer);
-		// loop all instruments
-		for (int i = 0; i < MAX_INSTRUMENTS; i++)
-		{
-			// solo mode and not the channel we want?
-			if (Solo && i != SoloChannel)
-			{
-				// loop all voices and clear outputs
-				for (int p = 0; p < SynthObj.Polyphony; p++)
-				{
-					InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
-					iwork->dlloutl = 0.0f;
-					iwork->dlloutr = 0.0f;
-					iwork->outl = 0.0f;
-					iwork->outr = 0.0f;
-				}
-				// adjust delay index
-				for (int s = 0; s < MAX_SLOTS; s++)
-				{		
-					BYTE* val = SynthObj.InstrumentValues[i][s];
-					if (val[0] == M_DLL)
-						go4k_delay_buffer_ofs += (5+65536)*4*SynthObj.Polyphony;
-				}
-				// go to next instrument
-				continue;
-			}
-			// if the instrument signal stack is valid and we still got a signal from that instrument
-			if (SynthObj.InstrumentSignalValid[i] && (fabs(SynthObj.SignalTrace[i]) > 0.00001f))
-			{
-				float sumSignals = 0.0f;
-				// loop all voices
-				for (int p = 0; p < SynthObj.Polyphony; p++)
-				{
-					InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
-					float *lwrk = iwork->workspace;
-					DWORD inote = iwork->note;
-					// loop each slot
-					for (int s = 0; s < MAX_SLOTS; s++)
-					{		
-						BYTE* val = SynthObj.InstrumentValues[i][s];
-						float *wrk = &(iwork->workspace[s*8]);
-						if (val[0] == M_FST && iwork->note)
-						{
-							FST_valP v = (FST_valP)val;
-							// if a target slot is set
-							if (v->dest_slot != -1)
-							{
-								InstrumentWorkspaceP mwork;
-								int polyphonicStore = SynthObj.Polyphony;
-								int stack = v->dest_stack;
-								// local storage?
-								if (stack == -1 || stack == i)
-								{
-									// only store the sample in the current workspace
-									polyphonicStore = 1;
-									mwork = iwork;
-								}
-								else if (stack == MAX_INSTRUMENTS)
-									mwork = &(SynthObj.GlobalWork);
-								else
-									mwork = &(SynthObj.InstrumentWork[stack*MAX_POLYPHONY]);
-								
-								float* mdest = &(mwork->workspace[v->dest_unit*8 + v->dest_slot]);
-								float amount = (2.0f*v->amount - 128.0f)*0.0078125f;
-								for (int stc = 0; stc < polyphonicStore; stc++)
-								{									
-									__asm
-									{
-										push	eax
-										fld		amount
-										fmul	st(0), st(1)
-										mov		eax, mdest
-										fstp	dword ptr [eax]
-										pop		eax
-									}
-									mdest += sizeof(InstrumentWorkspace)/4;
-								}
-							}
-						}
-						else
-						{
-							// only process if note active or dll unit
-							if (val[0])
-							{
-								// set up and call synth core func
-								__asm
-								{
-									pushad
-									xor		eax, eax
-									mov		esi, val
-									lodsb
-									mov		eax, dword ptr [SynthFuncs+eax*4]
-									mov		ebx, inote
-									mov		ecx, lwrk
-									mov		ebp, wrk
-									call	eax						
-									popad
-								}
-							}
-						}
-					}
-					// check for end of note
-					DWORD envstate = *((BYTE*)(lwrk));
-					if (envstate == ENV_STATE_OFF)
-					{
-						iwork->note = 0;
-					}
-					sumSignals += fabsf(iwork->outl) + fabsf(iwork->outr) + fabsf(iwork->dlloutl) + fabsf(iwork->dlloutr);
-				}
-				// update envelope follower only for non control instruments. (1s attack rate) for total instrument signal
-				if (SynthObj.ControlInstrument[i])
-					SynthObj.SignalTrace[i] = 1.0f;
-				else
-					SynthObj.SignalTrace[i] = sumSignals + 0.999977324f * ( SynthObj.SignalTrace[i] - sumSignals );	
-			}
-			// instrument stack invalid
-			else
-			{
-				// adjust delay index
-				for (int s = 0; s < MAX_SLOTS; s++)
-				{		
-					BYTE* val = SynthObj.InstrumentValues[i][s];
-					if (val[0] == M_DLL)
-						go4k_delay_buffer_ofs += (5+65536)*4*SynthObj.Polyphony;
-				}
-				// loop all voices
-				for (int p = 0; p < SynthObj.Polyphony; p++)
-				{
-					InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
-					iwork->dlloutl = 0.0f;
-					iwork->dlloutr = 0.0f;
-					iwork->outl = 0.0f;
-					iwork->outr = 0.0f;
-				}
-			}
-		}
-		// if the global stack is valid
-		if (SynthObj.GlobalSignalValid)
-		{
-			InstrumentWorkspaceP gwork = &(SynthObj.GlobalWork);
-			float *lwrk = gwork->workspace;
-			DWORD gnote = 1;
-			gwork->note = 1;
-			// loop all global slots
-			for (int s = 0; s < MAX_SLOTS; s++)
-			{		
-				BYTE* val = SynthObj.GlobalValues[s];
-				float *wrk = &(lwrk[s*8]);
-				// manually accumulate signals
-				float ACCL = 0.0f;
-				float ACCR = 0.0f;
-				if (val[0] == M_ACC)
-				{
-					ACC_valP av = (ACC_valP)val;
-					if (av->flags == ACC_OUT)
-					{
-						for (int i = 0; i < MAX_INSTRUMENTS; i++)
-						{
-							for (int p = 0; p < SynthObj.Polyphony; p++)
-							{
-								ACCL += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].outl;
-								ACCR += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].outr;
-							}
-						}
-					}
-					else
-					{
-						for (int i = 0; i < MAX_INSTRUMENTS; i++)
-						{
-							for (int p = 0; p < SynthObj.Polyphony; p++)
-							{
-								ACCL += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].dlloutl;
-								ACCR += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].dlloutr;
-							}
-						}
-					}
-					// push the accumulated signals on the fp stack
-					__asm
-					{
-						fld		ACCR
-						fld		ACCL
-					}
-				}
-				// no ACC unit, check store
-				else if (val[0] == M_FST && gwork->note)
-				{
-					FST_valP v = (FST_valP)val;
-					// if a target slot is set
-					if (v->dest_slot != -1)
-					{
-						InstrumentWorkspaceP mwork;
-						int polyphonicStore = SynthObj.Polyphony;
-						int stack = v->dest_stack;
-						// local storage?
-						if (stack == -1 || stack == MAX_INSTRUMENTS)
-						{
-							// only store the sample in the current workspace
-							polyphonicStore = 1;
-							mwork = &(SynthObj.GlobalWork);
-						}
-						else
-							mwork = &(SynthObj.InstrumentWork[stack*MAX_POLYPHONY]);
-						
-						float* mdest = &(mwork->workspace[v->dest_unit*8 + v->dest_slot]);
-						float amount = (2.0f*v->amount - 128.0f)*0.0078125f;;
-						for (int stc = 0; stc < polyphonicStore; stc++)
-						{
-							__asm
-							{
-								push	eax
-								fld		amount
-								fmul	st(0), st(1)
-								mov		eax, mdest
-								fstp	dword ptr [eax]
-								pop		eax
-							}
-							mdest += sizeof(InstrumentWorkspace)/4;
-						}
-					}
-				}
-				// just call synth core func
-				else
-				{
-					if (val[0])
-					{
-						__asm
-						{
-							pushad
-							xor		eax, eax
-							mov		esi, val
-							lodsb
-							mov		eax, dword ptr [SynthFuncs+eax*4]
-							mov		ebx, gnote
-							mov		ecx, lwrk
-							mov		ebp, wrk
-							call	eax						
-							popad
-						}
-					}
-				}
-			}
-			left = gwork->outl;
-			right = gwork->outr;
-		}
-
-		// clip 
-		if (left < -1.0f)
-			left = -1.0f;
-		if (left > 1.0f)
-			left = 1.0f;
-		if (right < -1.0f)
-			right = -1.0f;
-		if (right > 1.0f)
-			right = 1.0f;
-
-		*(oleft++) = left;
-		*(oright++) = right;
-
-		s++;
-	} // end sample loop
-
 	if (Recording)
 	{
 		samplesProcessed += samples;
+		// send a stayalive signal to the host
+		for (int i = 0; i < samples; i++)
+		{
+			float signal = 0.0625*((float)(i&63)/32.0f - 1.0f);
+			*oleft++ = signal;
+			*oright++ = signal;
+		}
+	}
+	else
+	{
+		// do as many samples as requested
+		int s = 0;
+		while (s < samples)
+		{
+			float left=0.0f;
+			float right=0.0f;
+		
+			go4k_delay_buffer_ofs = (DWORD)(&go4k_delay_buffer);
+			// loop all instruments
+			for (int i = 0; i < MAX_INSTRUMENTS; i++)
+			{
+				// solo mode and not the channel we want?
+				if (Solo && i != SoloChannel)
+				{
+					// loop all voices and clear outputs
+					for (int p = 0; p < SynthObj.Polyphony; p++)
+					{
+						InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
+						iwork->dlloutl = 0.0f;
+						iwork->dlloutr = 0.0f;
+						iwork->outl = 0.0f;
+						iwork->outr = 0.0f;
+					}
+					// adjust delay index
+					for (int s = 0; s < MAX_UNITS; s++)
+					{		
+						BYTE* val = SynthObj.InstrumentValues[i][s];
+						if (val[0] == M_DLL)
+							go4k_delay_buffer_ofs += (5+65536)*4*SynthObj.Polyphony;
+					}
+					// go to next instrument
+					continue;
+				}
+				// if the instrument signal stack is valid and we still got a signal from that instrument
+				if (SynthObj.InstrumentSignalValid[i] && (fabs(SynthObj.SignalTrace[i]) > 0.00001f))
+				{
+					float sumSignals = 0.0f;
+					// loop all voices
+					for (int p = 0; p < SynthObj.Polyphony; p++)
+					{
+						InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
+						float *lwrk = iwork->workspace;
+						DWORD inote = iwork->note;
+						// loop each slot
+						for (int s = 0; s <= SynthObj.HighestSlotIndex[i]; s++)
+						{		
+							BYTE* val = SynthObj.InstrumentValues[i][s];
+							float *wrk = &(iwork->workspace[s*MAX_UNIT_SLOTS]);
+							if (val[0] == M_FST)
+							{
+								FST_valP v = (FST_valP)val;
+								// if a target slot is set
+								if (v->dest_slot != -1)
+								{
+									InstrumentWorkspaceP mwork;
+									int polyphonicStore = SynthObj.Polyphony;
+									int stack = v->dest_stack;
+									// local storage?
+									if (stack == -1 || stack == i)
+									{
+										// only store the sample in the current workspace
+										polyphonicStore = 1;
+										mwork = iwork;
+									}
+									else if (stack == MAX_INSTRUMENTS)
+										mwork = &(SynthObj.GlobalWork);
+									else
+										mwork = &(SynthObj.InstrumentWork[stack*MAX_POLYPHONY]);
+								
+									float* mdest = &(mwork->workspace[v->dest_unit*MAX_UNIT_SLOTS + v->dest_slot]);
+									float amount = (2.0f*v->amount - 128.0f)*0.0078125f;
+									int storetype = v->type;
+									for (int stc = 0; stc < polyphonicStore; stc++)
+									{	
+										__asm
+										{
+											push	eax
+											push	ebx
+								
+											mov		eax, mdest
+											mov		ebx, storetype
+
+											fld		amount
+											fmul	st(0), st(1)
+								
+										//	test	ebx, FST_MUL
+										//	jz		store_func_add
+										//	fmul	dword ptr [eax] 
+										//	jmp		store_func_set
+										//store_func_add:
+											test	ebx, FST_ADD
+											jz		store_func_set
+											fadd	dword ptr [eax] 
+										store_func_set:
+											fstp	dword ptr [eax]
+										store_func_done:
+											pop		ebx
+											pop		eax
+										}
+										mdest += sizeof(InstrumentWorkspace)/4;
+									}
+									// remove signal on pop flag
+									if (storetype & FST_POP)
+									{
+										_asm  fstp	st(0);
+									}
+								}
+							}
+							else
+							{
+								// only process if note active or dll unit
+								if (val[0])
+								{
+									// set up and call synth core func
+									__asm
+									{
+										pushad
+										xor		eax, eax
+										mov		esi, val
+										lodsb
+										mov		eax, dword ptr [SynthFuncs+eax*4]
+										mov		ebx, inote
+										mov		ecx, lwrk
+										mov		ebp, wrk
+										call	eax						
+										popad
+									}
+								}
+							}
+						}
+						// check for end of note
+						DWORD envstate = *((BYTE*)(lwrk));
+						if (envstate == ENV_STATE_OFF)
+						{
+							iwork->note = 0;
+						}
+						sumSignals += fabsf(iwork->outl) + fabsf(iwork->outr) + fabsf(iwork->dlloutl) + fabsf(iwork->dlloutr);
+					}
+					// update envelope follower only for non control instruments. (1s attack rate) for total instrument signal
+					if (SynthObj.ControlInstrument[i])
+						SynthObj.SignalTrace[i] = 1.0f;
+					else
+						SynthObj.SignalTrace[i] = sumSignals + 0.999977324f * ( SynthObj.SignalTrace[i] - sumSignals );	
+				}
+				// instrument stack invalid
+				else
+				{
+					// adjust delay index
+					for (int s = 0; s < MAX_UNITS; s++)
+					{		
+						BYTE* val = SynthObj.InstrumentValues[i][s];
+						if (val[0] == M_DLL)
+							go4k_delay_buffer_ofs += (5+65536)*4*SynthObj.Polyphony;
+					}
+					// loop all voices
+					for (int p = 0; p < SynthObj.Polyphony; p++)
+					{
+						InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
+						iwork->dlloutl = 0.0f;
+						iwork->dlloutr = 0.0f;
+						iwork->outl = 0.0f;
+						iwork->outr = 0.0f;
+					}
+				}
+			}
+			// if the global stack is valid
+			if (SynthObj.GlobalSignalValid)
+			{
+				InstrumentWorkspaceP gwork = &(SynthObj.GlobalWork);
+				float *lwrk = gwork->workspace;
+				DWORD gnote = 1;
+				gwork->note = 1;
+				// loop all global slots
+				for (int s = 0; s <= SynthObj.HighestSlotIndex[16]; s++)
+				{		
+					BYTE* val = SynthObj.GlobalValues[s];
+					float *wrk = &(lwrk[s*MAX_UNIT_SLOTS]);
+					// manually accumulate signals
+					float ACCL = 0.0f;
+					float ACCR = 0.0f;
+					if (val[0] == M_ACC)
+					{
+						ACC_valP av = (ACC_valP)val;
+						if (av->flags == ACC_OUT)
+						{
+							for (int i = 0; i < MAX_INSTRUMENTS; i++)
+							{
+								for (int p = 0; p < SynthObj.Polyphony; p++)
+								{
+									ACCL += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].outl;
+									ACCR += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].outr;
+								}
+							}
+						}
+						else
+						{
+							for (int i = 0; i < MAX_INSTRUMENTS; i++)
+							{
+								for (int p = 0; p < SynthObj.Polyphony; p++)
+								{
+									ACCL += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].dlloutl;
+									ACCR += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].dlloutr;
+								}
+							}
+						}
+						// push the accumulated signals on the fp stack
+						__asm
+						{
+							fld		ACCR
+							fld		ACCL
+						}
+					}
+					// no ACC unit, check store
+					else if (val[0] == M_FST)
+					{
+						FST_valP v = (FST_valP)val;
+						// if a target slot is set
+						if (v->dest_slot != -1)
+						{
+							InstrumentWorkspaceP mwork;
+							int polyphonicStore = SynthObj.Polyphony;
+							int stack = v->dest_stack;
+							// local storage?
+							if (stack == -1 || stack == MAX_INSTRUMENTS)
+							{
+								// only store the sample in the current workspace
+								polyphonicStore = 1;
+								mwork = &(SynthObj.GlobalWork);
+							}
+							else
+								mwork = &(SynthObj.InstrumentWork[stack*MAX_POLYPHONY]);
+						
+							float* mdest = &(mwork->workspace[v->dest_unit*MAX_UNIT_SLOTS + v->dest_slot]);
+							float amount = (2.0f*v->amount - 128.0f)*0.0078125f;;
+							int storetype = v->type;
+							for (int stc = 0; stc < polyphonicStore; stc++)
+							{
+								__asm
+								{
+									push	eax
+									push	ebx
+								
+									mov		eax, mdest
+									mov		ebx, storetype
+
+									fld		amount
+									fmul	st(0), st(1)
+								
+								//	test	ebx, FST_MUL
+								//	jz		gstore_func_add
+								//	fmul	dword ptr [eax] 
+								//	jmp		gstore_func_set
+								//gstore_func_add:
+									test	ebx, FST_ADD
+									jz		gstore_func_set
+									fadd	dword ptr [eax] 
+								gstore_func_set:
+									fstp	dword ptr [eax]
+								gstore_func_done:
+									pop		ebx
+									pop		eax
+								}
+								mdest += sizeof(InstrumentWorkspace)/4;
+							}
+							// remove signal on pop flag
+							if (storetype & FST_POP)
+							{
+								_asm  fstp	st(0);
+							}
+						}
+					}
+					// just call synth core func
+					else
+					{
+						if (val[0])
+						{
+							__asm
+							{
+								pushad
+								xor		eax, eax
+								mov		esi, val
+								lodsb
+								mov		eax, dword ptr [SynthFuncs+eax*4]
+								mov		ebx, gnote
+								mov		ecx, lwrk
+								mov		ebp, wrk
+								call	eax						
+								popad
+							}
+						}
+					}
+				}
+				left = gwork->outl;
+				right = gwork->outr;
+			}
+
+			// clip 
+			if (left < -1.0f)
+				left = -1.0f;
+			if (left > 1.0f)
+				left = 1.0f;
+			if (right < -1.0f)
+				right = -1.0f;
+			if (right > 1.0f)
+				right = 1.0f;
+
+			*(oleft++) = left;
+			*(oright++) = right;
+
+			s++;
+		} // end sample loop	
 	}
 }
 
@@ -844,57 +919,6 @@ void Go4kVSTi_Record(bool record, int patternsize, float patternquant)
 					InstrumentRecord[i][j] = InstrumentRecord[i][(int)(j/TickScaler)];
 			}			
 		}
-		// init reduced patterns
-		ReducedPatterns.clear();
-		NumReducedPatterns = 0;
-		// add NULL pattern
-		for (int i = 0; i < PatternSize; i++)
-		{
-			ReducedPatterns.push_back(0);
-		}
-		// now add minimal reduced instrument patterns		
-		for (int i = 0; i < MAX_INSTRUMENTS; i++)
-		{
-			PatternIndices[i].clear();
-			// loop all patterns
-			for (int j = 0; j < MaxTicks/PatternSize; j++)
-			{
-				int pindex = j;
-				bool found = false;
-				// compare each tick of the current pattern to all already reduced patterns
-				for (int k = 0; k < ReducedPatterns.size()/PatternSize; k++)
-				{
-					bool patternMatch = true;
-					for (int l = 0; l < PatternSize; l++)
-					{						
-						if (InstrumentRecord[i][j*PatternSize+l] != ReducedPatterns[k*PatternSize+l])
-						{
-							patternMatch = false;
-							break;
-						}
-					}
-					if (patternMatch)
-					{
-						NumReducedPatterns++;
-						pindex = k;
-						found = true;
-						break;
-					}
-				}
-				// add new pattern if necessary
-				if (!found)
-				{
-					for (int k = 0; k < PatternSize; k++)
-					{
-						ReducedPatterns.push_back(InstrumentRecord[i][j*PatternSize+k]);
-					}			
-					pindex = (ReducedPatterns.size()/PatternSize)-1;
-				}
-				// add new pattern index
-				PatternIndices[i].push_back(pindex);
-			}				
-		}
-
 		// open file dialog and save if desired ...
 		// the save function called from this one is GoSynth_SaveByteStream
 		GetStreamFileName();	
@@ -904,32 +928,6 @@ void Go4kVSTi_Record(bool record, int patternsize, float patternquant)
 // add a voice with given parameters to synth
 void Go4kVSTi_AddVoice(int channel, int note)
 {
-	InstrumentWorkspaceP work,work2;
-	work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+0]);
-	work->release = 1;
-	work2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+1]);
-	work2->release = 1;
-	// filp worspace
-	if (SynthObj.Polyphony > 1)
-	{
-		work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+SynthObj.VoiceIndex[channel]]);
-		SynthObj.VoiceIndex[channel] = SynthObj.VoiceIndex[channel] ^ 0x1;
-	}
-	// add new note
-	memset(work, 0, 256*4+8);
-	work->note = note;
-	SynthObj.SignalTrace[channel] = 1.0f;
-	// check if its a controll instrument which is played
-	SynthObj.ControlInstrument[channel] = 1;
-	for (int i = 0; i < MAX_SLOTS; i++)
-	{
-		if (SynthObj.InstrumentValues[channel][i][0] == M_OUT)
-		{
-			SynthObj.ControlInstrument[channel] = 0;
-			break;
-		}
-	}
-
 	// record song
 	if (Recording)
 	{
@@ -960,17 +958,39 @@ void Go4kVSTi_AddVoice(int channel, int note)
 			InstrumentOn[channel] = CurrentTick;
 		}
 	}
+	else
+	{
+		InstrumentWorkspaceP work,work2;
+		work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+0]);
+		work->release = 1;
+		work2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+1]);
+		work2->release = 1;
+		// filp worspace
+		if (SynthObj.Polyphony > 1)
+		{
+			work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+SynthObj.VoiceIndex[channel]]);
+			SynthObj.VoiceIndex[channel] = SynthObj.VoiceIndex[channel] ^ 0x1;
+		}
+		// add new note
+		memset(work, 0, (2+MAX_UNITS*MAX_UNIT_SLOTS)*4);
+		work->note = note;
+		SynthObj.SignalTrace[channel] = 1.0f;
+		// check if its a controll instrument which is played
+		SynthObj.ControlInstrument[channel] = 1;
+		for (int i = 0; i < MAX_UNITS; i++)
+		{
+			if (SynthObj.InstrumentValues[channel][i][0] == M_OUT)
+			{
+				SynthObj.ControlInstrument[channel] = 0;
+				break;
+			}
+		}
+	}
 }
 
 // stop a voice with given parameters in synth
 void Go4kVSTi_StopVoice(int channel, int note)
-{
-	InstrumentWorkspaceP work,work2;
-	// release notes
-	work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+0]);
-	work->release = 1;
-	work2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+1]);
-	work2->release = 1;
+{	
 	// record song
 	if (Recording)
 	{
@@ -985,6 +1005,15 @@ void Go4kVSTi_StopVoice(int channel, int note)
 		}
 //		if (!InstrumentRecord[channel][CurrentTick])
 			InstrumentOn[channel] = -1;
+	}
+	else
+	{
+		InstrumentWorkspaceP work,work2;
+		// release notes
+		work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+0]);
+		work->release = 1;
+		work2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+1]);
+		work2->release = 1;
 	}
 }
 
@@ -1002,11 +1031,11 @@ void FlipSlotModulations(int stack, int unit1, int unit2)
 			values = SynthObj.InstrumentValues[i][0];
 		else
 			values = SynthObj.GlobalValues[0];
-		for (int u = 0; u < MAX_SLOTS; u++)
+		for (int u = 0; u < MAX_UNITS; u++)
 		{
-			if (values[u*MAX_SLOTS+0] == M_FST)
+			if (values[u*MAX_UNIT_SLOTS+0] == M_FST)
 			{
-				FST_valP v = (FST_valP)(&values[u*MAX_SLOTS+0]);
+				FST_valP v = (FST_valP)(&values[u*MAX_UNIT_SLOTS+0]);
 								
 				int target_inst;
 				if (v->dest_stack == -1)
@@ -1047,13 +1076,13 @@ bool Autoconvert10(int stack)
 		values = SynthObj.GlobalValues[0];
 
 	// replace the delay with the new one
-	for (int u = 0; u < MAX_SLOTS; u++)
+	for (int u = 0; u < MAX_UNITS; u++)
 	{
-		if (values[u*MAX_SLOTS+0] == M_DLL)
+		if (values[u*MAX_UNIT_SLOTS+0] == M_DLL)
 		{
 			DLL10_val ov;
-			memcpy(&ov, &values[u*MAX_SLOTS+0], sizeof(DLL10_val));
-			DLL_valP nv = (DLL_valP)(&values[u*MAX_SLOTS+0]);
+			memcpy(&ov, &values[u*MAX_UNIT_SLOTS+0], sizeof(DLL10_val));
+			DLL_valP nv = (DLL_valP)(&values[u*MAX_UNIT_SLOTS+0]);
 			nv->id = ov.id;
 			nv->pregain = ov.pregain;
 			nv->dry = ov.dry;
@@ -1081,13 +1110,13 @@ bool Autoconvert11(int stack)
 		values = SynthObj.GlobalValues[0];
 
 	// replace the osc with the new one
-	for (int u = 0; u < MAX_SLOTS; u++)
+	for (int u = 0; u < MAX_UNITS; u++)
 	{
-		if (values[u*MAX_SLOTS+0] == M_VCO)
+		if (values[u*MAX_UNIT_SLOTS+0] == M_VCO)
 		{
 			VCO11_val ov;
-			memcpy(&ov, &values[u*MAX_SLOTS+0], sizeof(VCO11_val));
-			VCO_valP nv = (VCO_valP)(&values[u*MAX_SLOTS+0]);
+			memcpy(&ov, &values[u*MAX_UNIT_SLOTS+0], sizeof(VCO11_val));
+			VCO_valP nv = (VCO_valP)(&values[u*MAX_UNIT_SLOTS+0]);
 			nv->id = ov.id;
 			nv->transpose = ov.transpose;
 			nv->detune = ov.detune;
@@ -1102,6 +1131,31 @@ bool Autoconvert11(int stack)
 	return true;
 }
 
+// autoconvert 1.3 instrument stacks
+bool Autoconvert13(int stack)
+{
+	// get desired stack
+	BYTE* values;
+	if (stack < MAX_INSTRUMENTS)
+		values = SynthObj.InstrumentValues[stack][0];
+	else
+		values = SynthObj.GlobalValues[0];
+
+	// replace the osc with the new one
+	for (int u = 0; u < MAX_UNITS; u++)
+	{
+		if (values[u*MAX_UNIT_SLOTS+0] == M_VCO)
+		{
+			VCO_valP nv = (VCO_valP)(&values[u*MAX_UNIT_SLOTS+0]);
+			// correct sine color as it has a meaning now in 1.4 format
+			if (nv->flags & VCO_SINE)
+				nv->color = 128;
+		}
+	}
+	return true;
+}
+
+
 // load patch data
 void Go4kVSTi_LoadPatch(char *filename)
 {
@@ -1113,15 +1167,24 @@ void Go4kVSTi_LoadPatch(char *filename)
 		bool version10 = false;
 		bool version11 = false;
 		bool version12 = false;
+		bool version13 = false;
 		fread(&version, 1, 4, file);
 		if (versiontag != version)
 		{
+			// version 1.3 file
+			if (version == versiontag13)
+			{
+				// only mulp2 unit added and layout for instruments changed, no need for message
+				//MessageBox(0,"Autoconvert. Please save file again", "1.3 File Format", MB_OK | MB_SETFOREGROUND);
+				version13 = true;
+			}
 			// version 1.2 file
-			if (version == versiontag12)
+			else if (version == versiontag12)
 			{
 				// only fld unit added, no need for message
 				//MessageBox(0,"Autoconvert. Please save file again", "1.2 File Format", MB_OK | MB_SETFOREGROUND);
 				version12 = true;
+				version13 = true;
 			}
 			// version 1.1 file
 			else if (version == versiontag11)
@@ -1129,6 +1192,7 @@ void Go4kVSTi_LoadPatch(char *filename)
 				MessageBox(0,"Autoconvert. Please save file again", "1.1 File Format", MB_OK | MB_SETFOREGROUND);
 				version11 = true;
 				version12 = true;
+				version13 = true;
 			}
 			// version 1.0 file
 			else if (version == versiontag10)
@@ -1137,6 +1201,7 @@ void Go4kVSTi_LoadPatch(char *filename)
 				version10 = true;
 				version11 = true;
 				version12 = true;
+				version13 = true;
 			}
 			// newer format than supported
 			else
@@ -1147,15 +1212,34 @@ void Go4kVSTi_LoadPatch(char *filename)
 			}
 		}
 
-		int slots=MAX_SLOTS;
 		// read data
 		fread(&(SynthObj.Polyphony), 1, 4, file);
 		fread(SynthObj.InstrumentNames, 1, MAX_INSTRUMENTS*64, file);
 		for (int i=0; i<MAX_INSTRUMENTS; i++)
 		{
-			fread(SynthObj.InstrumentValues[i], 1, slots*MAX_SLOT_VALUES, file);
+			if (version13)
+			{
+				BYTE dummyBuf[16];
+				for (int j = 0; j < 32; j++) // 1.3 format had 32 units
+				{
+					fread(SynthObj.InstrumentValues[i][j], 1, 16, file);  // 1.3 format had 32 unit slots, but not fully used
+					fread(dummyBuf, 1, 16, file); // 1.3 read remaining block to dummy
+				}
+			}
+			else
+				fread(SynthObj.InstrumentValues[i], 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		}
-		fread(SynthObj.GlobalValues, 1, slots*MAX_SLOT_VALUES, file);
+		if (version13)
+		{
+			BYTE dummyBuf[16];
+			for (int j = 0; j < 32; j++) // 1.3 format had 32 units
+			{
+				fread(SynthObj.GlobalValues[j], 1, 16, file);  // 1.3 format had 32 unit slots, but not fully used
+				fread(dummyBuf, 1, 16, file); // 1.3 read remaining block to dummy
+			}
+		}
+		else
+			fread(SynthObj.GlobalValues, 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		fclose(file);
 
 		// convert 1.0 file format
@@ -1205,6 +1289,27 @@ void Go4kVSTi_LoadPatch(char *filename)
 		{
 			// nothing to do, only fld unit added at the end
 		}
+		// version 1.3 file format
+		if (version13)
+		{
+			// convert all instruments
+			for (int i = 0; i < MAX_INSTRUMENTS; i++)
+			{
+				if (!Autoconvert13(i))
+				{
+					char errmsg[64];
+					sprintf(errmsg, "Instrument %d could not be converted", i+1);
+					MessageBox(0, errmsg, "Error", MB_OK | MB_SETFOREGROUND);
+				}
+			}
+			// convert global
+			if (!Autoconvert13(MAX_INSTRUMENTS))
+			{
+				char errmsg[64];
+				sprintf(errmsg, "Global could not be converted");
+				MessageBox(0, errmsg, "Error", MB_OK | MB_SETFOREGROUND);
+			}
+		}
 	}
 	Go4kVSTi_UpdateDelayTimes();
 }
@@ -1218,8 +1323,8 @@ void Go4kVSTi_SavePatch(char *filename)
 		fwrite(&versiontag, 1, 4, file);
 		fwrite(&(SynthObj.Polyphony), 1, 4, file);
 		fwrite(SynthObj.InstrumentNames, 1, MAX_INSTRUMENTS*64, file);
-		fwrite(SynthObj.InstrumentValues, 1, MAX_INSTRUMENTS*MAX_SLOTS*MAX_SLOT_VALUES, file);
-		fwrite(SynthObj.GlobalValues, 1, MAX_SLOTS*MAX_SLOT_VALUES, file);
+		fwrite(SynthObj.InstrumentValues, 1, MAX_INSTRUMENTS*MAX_UNITS*MAX_UNIT_SLOTS, file);
+		fwrite(SynthObj.GlobalValues, 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		fclose(file);
 	}
 }
@@ -1234,15 +1339,24 @@ void Go4kVSTi_LoadInstrument(char* filename, char channel)
 		bool version10 = false;
 		bool version11 = false;
 		bool version12 = false;
+		bool version13 = false;
 		fread(&version, 1, 4, file);
 		if (versiontag != version) // 4k10
 		{
+			// version 1.3 file
+			if (version == versiontag13)
+			{
+				// only mulp2 unit added and layout for instruments changed, no need for message
+				//MessageBox(0,"Autoconvert. Please save file again", "1.3 File Format", MB_OK | MB_SETFOREGROUND);
+				version13 = true;
+			}
 			// version 1.2 file
-			if (version == versiontag12)
+			else if (version == versiontag12)
 			{
 				// only fld unit added, no need for message
 				//MessageBox(0,"Autoconvert. Please save file again", "1.2 File Format", MB_OK | MB_SETFOREGROUND);
 				version12 = true;
+				version13 = true;
 			}
 			// version 1.1 file
 			else if (version == versiontag11)
@@ -1250,6 +1364,7 @@ void Go4kVSTi_LoadInstrument(char* filename, char channel)
 				MessageBox(0,"Autoconvert. Please save file again", "1.1 File Format", MB_OK | MB_SETFOREGROUND);
 				version11 = true;
 				version12 = true;
+				version13 = true;
 			}
 			// version 1.0 file
 			else if (version == versiontag10)
@@ -1258,6 +1373,7 @@ void Go4kVSTi_LoadInstrument(char* filename, char channel)
 				version10 = true;
 				version11 = true;
 				version12 = true;
+				version13 = true;
 			}
 			// newer format than supported
 			else
@@ -1268,18 +1384,37 @@ void Go4kVSTi_LoadInstrument(char* filename, char channel)
 			}
 		}
 		
-		int slots=MAX_SLOTS;
 		if (channel < 16)
 		{
 			Go4kVSTi_ResetInstrument(channel);
 			fread(SynthObj.InstrumentNames[channel], 1, 64, file);
-			fread(SynthObj.InstrumentValues[channel], 1, slots*MAX_SLOT_VALUES, file);
+			if (version13)
+			{
+				BYTE dummyBuf[16];
+				for (int j = 0; j < 32; j++) // 1.3 format had 32 units
+				{
+					fread(SynthObj.InstrumentValues[channel][j], 1, 16, file); // 1.3 format had 32 unit slots, but not fully used
+					fread(dummyBuf, 1, 16, file); // 1.3 read remaining block to dummy
+				}
+			}
+			else
+				fread(SynthObj.InstrumentValues[channel], 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		}
 		else
 		{
 			Go4kVSTi_ResetGlobal();
 			fread(SynthObj.InstrumentNames[channel], 1, 64, file);
-			fread(SynthObj.GlobalValues, 1, slots*MAX_SLOT_VALUES, file);
+			if (version13)
+			{
+				BYTE dummyBuf[16];
+				for (int j = 0; j < 32; j++) // 1.3 format had 32 units
+				{
+					fread(SynthObj.GlobalValues[j], 1, 16, file);  // 1.3 format had 32 unit slots, but not fully used
+					fread(dummyBuf, 1, 16, file); // 1.3 read remaining block to dummy
+				}
+			}
+			else
+				fread(SynthObj.GlobalValues, 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		}
 		fclose(file);
 		// convert 1.0 file format
@@ -1335,6 +1470,30 @@ void Go4kVSTi_LoadInstrument(char* filename, char channel)
 		{
 			// nothing to do, only fld unit added at the end
 		}
+		// version 1.3 file format
+		if (version13)
+		{
+			// convert instruments
+			if (channel < 16)
+			{
+				if (!Autoconvert13(channel))
+				{
+					char errmsg[64];
+					sprintf(errmsg, "Instrument %d could not be converted", channel+1);
+					MessageBox(0, errmsg, "Error", MB_OK | MB_SETFOREGROUND);
+				}
+			}
+			// convert global
+			else
+			{
+				if (!Autoconvert13(MAX_INSTRUMENTS))
+				{
+					char errmsg[64];
+					sprintf(errmsg, "Global could not be converted");
+					MessageBox(0, errmsg, "Error", MB_OK | MB_SETFOREGROUND);
+				}
+			}
+		}
 	}
 	Go4kVSTi_UpdateDelayTimes();
 }
@@ -1349,12 +1508,12 @@ void Go4kVSTi_SaveInstrument(char* filename, char channel)
 		if (channel < 16)
 		{
 			fwrite(SynthObj.InstrumentNames[channel], 1, 64, file);
-			fwrite(SynthObj.InstrumentValues[channel], 1, MAX_SLOTS*MAX_SLOT_VALUES, file);
+			fwrite(SynthObj.InstrumentValues[channel], 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		}
 		else
 		{
 			fwrite(SynthObj.InstrumentNames[channel], 1, 64, file);
-			fwrite(SynthObj.GlobalValues, 1, MAX_SLOTS*MAX_SLOT_VALUES, file);
+			fwrite(SynthObj.GlobalValues, 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		}
 		fclose(file);
 	}
@@ -1366,7 +1525,7 @@ void Go4kVSTi_LoadUnit(char* filename, BYTE* slot)
 	FILE *file = fopen(filename, "rb");
 	if (file)
 	{
-		fread(slot, 1, MAX_SLOT_VALUES, file);
+		fread(slot, 1, MAX_UNIT_SLOTS, file);
 		fclose(file);
 		if (slot[0] == M_DLL)
 		{
@@ -1382,7 +1541,7 @@ void Go4kVSTi_SaveUnit(char* filename, BYTE* slot)
 	FILE *file = fopen(filename, "wb");
 	if (file)
 	{
-		fwrite(slot, 1, MAX_SLOT_VALUES, file);
+		fwrite(slot, 1, MAX_UNIT_SLOTS, file);
 		fclose(file);
 	}
 }
@@ -1412,14 +1571,17 @@ struct SynthUses
 	bool vco_gm;
 	bool vco_sm;
 	bool vco_gate;
+	bool vco_stereo;
 
 	bool vcf_fm;
 	bool vcf_rm;
+	bool vcf_stereo;
 
 	bool dst_use;
 	bool dst_snh;
 	bool dst_dm;
 	bool dst_sm;
+	bool dst_stereo;
 
 	bool dll_use;
 	bool dll_notesync;
@@ -1432,8 +1594,6 @@ struct SynthUses
 	bool dll_dm;
 	bool dll_sm;
 	bool dll_am;
-
-	bool fop_loadnote;
 
 	bool pan_use;
 	bool pan_pm;
@@ -1456,7 +1616,7 @@ void GetUses(SynthUses *uses, bool InstrumentUsed[])
 			if (!InstrumentUsed[i])
 				continue;
 
-		for (int u = 0; u < MAX_SLOTS; u++)
+		for (int u = 0; u < MAX_UNITS; u++)
 		{
 			BYTE *v;
 			if (i < MAX_INSTRUMENTS)
@@ -1472,12 +1632,21 @@ void GetUses(SynthUses *uses, bool InstrumentUsed[])
 					uses->vco_shape = true;
 				if (((VCO_valP)v)->flags & VCO_GATE)
 					uses->vco_gate = true;
+				if (((VCO_valP)v)->flags & VCO_STEREO)
+					uses->vco_stereo = true;
+			}
+			if (v[0] == M_VCF)
+			{
+				if (((VCF_valP)v)->type & VCF_STEREO)
+					uses->vcf_stereo = true;
 			}
 			if (v[0] == M_DST)
 			{
 				uses->dst_use = true;
 				if (((DST_valP)v)->snhfreq != 128)
 					uses->dst_snh = true;
+				if (((DST_valP)v)->stereo & VCF_STEREO)
+					uses->dst_stereo = true;
 			}
 			if (v[0] == M_DLL)
 			{
@@ -1493,11 +1662,6 @@ void GetUses(SynthUses *uses, bool InstrumentUsed[])
 			{
 				if (((PAN_valP)v)->panning != 64)
 					uses->pan_use = true;
-			}
-			if (v[0] == M_FOP)
-			{
-				if (((FOP_valP)v)->flags == FOP_LOADNOTE)
-					uses->fop_loadnote = true;
 			}
 			if (v[0] == M_FLD)
 			{				
@@ -1625,30 +1789,155 @@ void GetUses(SynthUses *uses, bool InstrumentUsed[])
 	}
 }
 
-#ifdef EXPORT_OBJECT_FILE
-int randiSeed = 23;
-int randi()
+void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, int useenotevalues, int clipoutput, int undenormalize, int objformat, int output16)
 {	
-	return( ((randiSeed = randiSeed * 214013L + 2531011L) >> 16)  & 0x7fff );
-}
+	std::string incfile = filename;
+	// extract path
+	std::string fpath = filename;
+	int sp = fpath.find_last_of("/");
+	int bp = fpath.find_last_of("\\");
+	if (sp < bp)
+		sp = bp;
+	std::string storePath = fpath.substr(0, sp);
+
+	SynthUses mergeUses;
+	memset(&mergeUses, 0, sizeof(SynthUses));
+	int mergeMaxInst = 0;
+	int mergeMaxPatterns = 0;
+	int mergeNumReducedPatterns = 0;
+	std::vector<int> mergePatternIndices[MAX_INSTRUMENTS];
+	std::string mergeCommandString;
+	std::string mergeValueString;
+	int mergeDelayTimes = 0;
+	std::vector<WORD> mergeDelays;	
+
+#ifndef _8KLANG
+	// init reduced patterns for primary plugin
+	ReducedPatterns.clear();
+	NumReducedPatterns = 0;
+	// add NULL pattern
+	for (int i = 0; i < PatternSize; i++)
+	{
+		ReducedPatterns.push_back(0);
+	}
+#else
+	// load merge info if available 
+	std::string mergefile = storePath + "/8klang.merge";
+	FILE *mfile = fopen(mergefile.c_str(), "rb");
+	if (mfile)
+	{
+		// read unit usage info block for primary plugin
+		fread(&mergeUses, sizeof(SynthUses), 1, mfile);
+		// read number of instruments for primary plugin
+		fread(&mergeMaxInst, 4, 1, mfile);
+		// read max number of used patterns for primary plugin
+		fread(&mergeMaxPatterns, 4, 1, mfile);		
+		// read and add reduced patterns from primary plugin
+		fread(&mergeNumReducedPatterns, 4, 1, mfile);
+		for (int i = 0; i < mergeNumReducedPatterns*PatternSize; i++)
+		{
+			int rpv = 0;
+			fread(&rpv, 4, 1, mfile);
+			ReducedPatterns.push_back(rpv);
+		}
+		// read pattern list for primary plugin
+		for (int i = 0; i < mergeMaxInst; i++)
+		{
+			for (int j = 0; j < mergeMaxPatterns; j++)
+			{
+				int pi = 0;
+				fread(&pi, 4, 1, mfile);
+				mergePatternIndices[i].push_back(pi);
+			}
+		}
+		char c;
+		// read command strings		
+		while (true)
+		{
+			fread(&c, 1, 1, mfile);		
+			if (c == 0)
+				break;
+			mergeCommandString += c;
+		};
+		// read value strings
+		while (true)
+		{
+			fread(&c, 1, 1, mfile);		
+			if (c == 0)
+				break;
+			mergeValueString += c;
+		};
+
+		
+		fread(&mergeDelayTimes, 4, 1, mfile);
+		for (int i = 0; i < mergeDelayTimes; i++)
+		{
+			int delaytime;
+			fread(&delaytime, 4, 1, mfile);
+			mergeDelays.push_back(delaytime);
+		}		
+
+		fclose(mfile);
+	}
 #endif
 
-void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, int useenotevalues, int clipoutput, int undenormalize, int objformat, int output16)
-{
-	std::string fpath = filename;
-#ifdef EXPORT_OBJECT_FILE
-	unsigned char* CryptTable = (unsigned char*)malloc(1024*1024);
-	randiSeed = 23;
-	for (int i = 0; i < 1024*1024; i++)
-		CryptTable[i] = randi() & 0xff;
-	char temppath[1024];
-	GetTempPath(1024, temppath);
-	std::string path = temppath;
-	// construct temp strings
-	std::string incfile = path + "4klang.inc";
-#else
-	std::string incfile = filename;
-#endif
+	std::string pfilepath = storePath + "/patterns.dbg";
+	FILE *pfile = fopen(pfilepath.c_str(), "wb");
+	// now add minimal reduced instrument patterns		
+	for (int i = 0; i < MAX_INSTRUMENTS; i++)
+	{
+		fprintf(pfile, "Instrument%d:\n", i);
+		PatternIndices[i].clear();
+		// loop all patterns
+		for (int j = 0; j < MaxTicks/PatternSize; j++)
+		{
+			for (int l = 0; l < PatternSize; l++)
+			{
+				char bv = InstrumentRecord[i][j*PatternSize+l];
+				if (bv >= 0)
+					fprintf(pfile, "%d, ", bv);
+				else
+					fprintf(pfile, "HLD, ", bv);
+			}
+			fprintf(pfile, "\n");
+
+			int pindex = j;
+			bool found = false;
+			// compare each tick of the current pattern to all already reduced patterns
+			for (int k = 0; k < ReducedPatterns.size()/PatternSize; k++)
+			{
+				bool patternMatch = true;
+				for (int l = 0; l < PatternSize; l++)
+				{						
+					if (InstrumentRecord[i][j*PatternSize+l] != ReducedPatterns[k*PatternSize+l])
+					{
+						patternMatch = false;
+						break;
+					}
+				}
+				if (patternMatch)
+				{
+					NumReducedPatterns++;
+					pindex = k;
+					found = true;
+					break;
+				}
+			}
+			// add new pattern if necessary
+			if (!found)
+			{
+				for (int k = 0; k < PatternSize; k++)
+				{
+					ReducedPatterns.push_back(InstrumentRecord[i][j*PatternSize+k]);
+				}			
+				pindex = (ReducedPatterns.size()/PatternSize)-1;
+			}
+			// add new pattern index
+			PatternIndices[i].push_back(pindex);
+		}				
+	}
+	fclose(pfile);
+
 	int maxinst = 0;
 	FILE *file = fopen(incfile.c_str(), "w");
 	if (file)
@@ -1684,6 +1973,15 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		std::vector<int> delay_indices;
 		bool hasReverb = false;
 		bool hasNoteSync = false;
+#ifdef _8KLANG
+		//m get delaytimes and index from primary plugin
+		for (int i = 0; i < mergeDelayTimes; i++)
+		{
+			delay_times.push_back(mergeDelays[i]);
+			if (i < 17)
+				delay_indices.push_back(i);
+		}
+#else
 		// add notesync and reverb times
 		for (int i = 0; i < 17; i++)
 		{
@@ -1692,9 +1990,10 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 			delay_indices.push_back(i);
 		}
 		delay_times[0] = 0;
+#endif
 		for (int i = 0; i <= MAX_INSTRUMENTS; i++)
 		{
-			for (int u = 0; u < MAX_SLOTS; u++)
+			for (int u = 0; u < MAX_UNITS; u++)
 			{
 				//	// used instrument or global?
 				if (InstrumentUsed[i] || i == MAX_INSTRUMENTS)
@@ -1767,6 +2066,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 				}
 			}
 		}
+// rarely needed anyway
+#if 0
 		// if we dont have reverb, remove values and adjust indices
 		if (!hasReverb)
 		{
@@ -1803,9 +2104,14 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 				delay_indices[i] -= 1;
 			}
 		}
+#endif
 
 		SynthUses uses;
+#ifndef _8KLANG
 		memset(&uses, 0, sizeof(SynthUses));
+#else
+		memcpy(&uses, &mergeUses, sizeof(SynthUses));
+#endif
 		GetUses(&uses, InstrumentUsed);
 
 		// write inc file
@@ -1838,11 +2144,11 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 	}
 
 		fprintf(file, "%%define SAMPLE_RATE	%d\n", 44100);
-		fprintf(file, "%%define MAX_INSTRUMENTS	%d\n", maxinst);
+		fprintf(file, "%%define MAX_INSTRUMENTS	%d\n", maxinst + mergeMaxInst);
 		fprintf(file, "%%define MAX_VOICES %d\n", SynthObj.Polyphony);
 		fprintf(file, "%%define HLD 1\n");
 		fprintf(file, "%%define BPM %f\n", BeatsPerMinute);
-		fprintf(file, "%%define MAX_PATTERNS %d\n", PatternIndices[0].size());
+		fprintf(file, "%%define MAX_PATTERNS %d\n", mergeMaxPatterns > PatternIndices[0].size() ? mergeMaxPatterns : PatternIndices[0].size());
 		fprintf(file, "%%define PATTERN_SIZE_SHIFT %d\n", GetShift2(PatternSize));
 		fprintf(file, "%%define PATTERN_SIZE (1 << PATTERN_SIZE_SHIFT)\n");
 		fprintf(file, "%%define	MAX_TICKS (MAX_PATTERNS*PATTERN_SIZE)\n");
@@ -1894,6 +2200,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define 	GO4K_USE_VCO_MOD_GM\n");
 	if (uses.vco_sm)
 		fprintf(file, "%%define 	GO4K_USE_VCO_MOD_SM\n");
+	if (uses.vco_stereo)
+		fprintf(file, "%%define		GO4K_USE_VCO_STEREO\n");
 		fprintf(file, "%%define 	GO4K_USE_VCF_CHECK\n");
 	if (uses.vcf_fm)
 		fprintf(file, "%%define 	GO4K_USE_VCF_MOD_FM\n");
@@ -1902,6 +2210,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define 	GO4K_USE_VCF_HIGH\n");
 		fprintf(file, "%%define 	GO4K_USE_VCF_BAND\n");
 		fprintf(file, "%%define 	GO4K_USE_VCF_PEAK\n");
+	if (uses.vcf_stereo)
+		fprintf(file, "%%define		GO4K_USE_VCF_STEREO\n");
 		fprintf(file, "%%define 	GO4K_USE_DST_CHECK\n");
 	if (uses.dst_snh)
 		fprintf(file, "%%define 	GO4K_USE_DST_SH\n");
@@ -1909,6 +2219,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define 	GO4K_USE_DST_MOD_DM\n");
 	if (uses.dst_sm)
 		fprintf(file, "%%define 	GO4K_USE_DST_MOD_SH\n");
+	if (uses.dst_stereo)
+		fprintf(file, "%%define		GO4K_USE_DST_STEREO\n");
 	if (uses.dll_notesync)
 		fprintf(file, "%%define		GO4K_USE_DLL_NOTE_SYNC\n");
 	if (uses.dll_chorus)
@@ -1917,8 +2229,6 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 	if (uses.dll_damp)
 		fprintf(file, "%%define 	GO4K_USE_DLL_DAMP\n");
 		fprintf(file, "%%define 	GO4K_USE_DLL_DC_FILTER\n");
-	if (uses.fop_loadnote)
-		fprintf(file, "%%define		GO4K_USE_FOP_LOADNOTE\n");
 		fprintf(file, "%%define 	GO4K_USE_FSTG_CHECK\n");
 	if (uses.pan_pm)
 		fprintf(file, "%%define 	GO4K_USE_PAN_MOD\n");
@@ -1945,7 +2255,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define 	GO4K_USE_DLL_MOD_AM\n");
 
 		fprintf(file, "%%define	MAX_DELAY			65536\n");
-		fprintf(file, "%%define MAX_WORKSPACE_SLOTS	8\n");
+		fprintf(file, "%%define MAX_UNITS			48\n");
+		fprintf(file, "%%define	MAX_UNIT_SLOTS	    9\n");
 		fprintf(file, "%%define GO4K_BEGIN_CMDDEF(def_name)\n");
 		fprintf(file, "%%define GO4K_END_CMDDEF db 0\n");
 		fprintf(file, "%%define GO4K_BEGIN_PARAMDEF(def_name)\n");
@@ -2018,6 +2329,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define NOISE		0x08\n");
 		fprintf(file, "%%define LFO			0x10\n");
 		fprintf(file, "%%define GATE		0x20\n");
+		fprintf(file, "%%define	VCO_STEREO	0x40\n");
 		fprintf(file, "struc	go4kVCO_val\n");
 		fprintf(file, "	.transpose	resd	1\n");
 		fprintf(file, "	.detune		resd	1\n");
@@ -2044,6 +2356,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "	.cm			resd	1\n");
 		fprintf(file, "	.sm			resd	1\n");
 		fprintf(file, "	.gm			resd	1\n");
+		fprintf(file, "	.phase2		resd	1\n");
 		fprintf(file, "	.size\n");
 		fprintf(file, "endstruc\n");
 
@@ -2059,6 +2372,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define	BANDSTOP	0x3\n");
 		fprintf(file, "%%define ALLPASS		0x7\n");
 		fprintf(file, "%%define	PEAK		0x8\n");
+		fprintf(file, "%%define STEREO		0x10\n");
 		fprintf(file, "%%define	FREQUENCY(val)	val\n");
 		fprintf(file, "%%define	RESONANCE(val)	val\n");
 		fprintf(file, "%%define	VCFTYPE(val)	val\n");
@@ -2072,35 +2386,46 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "	.low		resd	1\n");
 		fprintf(file, "	.high		resd	1\n");
 		fprintf(file, "	.band		resd	1\n");
-		fprintf(file, "	.freq		resd	1\n");
+		fprintf(file, "	.freq		resd	1\n");		
 		fprintf(file, "	.fm			resd	1\n");
-		fprintf(file, "	.rm			resd	1	\n");
+		fprintf(file, "	.rm			resd	1\n");
+		fprintf(file, "	.low2		resd	1\n");
+		fprintf(file, "	.high2		resd	1\n");
+		fprintf(file, "	.band2		resd	1\n");
 		fprintf(file, "	.size\n");
 		fprintf(file, "endstruc\n");
 
 		fprintf(file, "GO4K_DST_ID		equ		4\n");
-		fprintf(file, "%%macro	GO4K_DST 2\n");
+		fprintf(file, "%%macro	GO4K_DST 3\n");
 		fprintf(file, "	db	%%1\n");
-		fprintf(file, "%%ifdef GO4K_USE_DST_SH	\n");
+		fprintf(file, "%%ifdef GO4K_USE_DST_SH\n");	
 		fprintf(file, "	db	%%2\n");
-		fprintf(file, "%%endif	\n");
+		fprintf(file, "%%ifdef GO4K_USE_DST_STEREO\n");
+		fprintf(file, "	db	%%3\n");
+		fprintf(file, "%%endif\n");
+		fprintf(file, "%%else\n");
+		fprintf(file, "%%ifdef GO4K_USE_DST_STEREO\n");	
+		fprintf(file, "	db	%%3\n");
+		fprintf(file, "%%endif\n");
+		fprintf(file, "%%endif\n");
 		fprintf(file, "%%endmacro\n");
 		fprintf(file, "%%define	DRIVE(val)		val\n");
 		fprintf(file, "%%define	SNHFREQ(val)	val\n");
+		fprintf(file, "%%define	FLAGS(val)		val\n");
 		fprintf(file, "struc	go4kDST_val\n");
 		fprintf(file, "	.drive		resd	1\n");
 		fprintf(file, "%%ifdef GO4K_USE_DST_SH	\n");
 		fprintf(file, "	.snhfreq	resd	1\n");
 		fprintf(file, "%%endif	\n");
+		fprintf(file, "	.flags		resd	1\n");
 		fprintf(file, "	.size\n");
 		fprintf(file, "endstruc\n");
 		fprintf(file, "struc	go4kDST_wrk\n");
-		fprintf(file, "%%ifdef GO4K_USE_DST_SH	\n");
 		fprintf(file, "	.out		resd	1\n");
 		fprintf(file, "	.snhphase	resd	1\n");
-		fprintf(file, "%%endif	\n");
 		fprintf(file, "	.dm			resd	1\n");
 		fprintf(file, "	.sm			resd	1\n");
+		fprintf(file, "	.out2		resd	1\n");
 		fprintf(file, "	.size\n");
 		fprintf(file, "endstruc\n");
 
@@ -2176,6 +2501,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define FOP_MUL			0x7\n");
 		fprintf(file, "%%define FOP_ADDP2		0x8\n");
 		fprintf(file, "%%define FOP_LOADNOTE	0x9\n");
+		fprintf(file, "%%define FOP_MULP2		0xa\n");
 		fprintf(file, "struc	go4kFOP_val\n");
 		fprintf(file, "	.flags		resd	1\n");
 		fprintf(file, "	.size\n");
@@ -2187,10 +2513,13 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "GO4K_FST_ID		equ		7\n");
 		fprintf(file, "%%macro	GO4K_FST 2\n");
 		fprintf(file, "	db	%%1\n");
-		fprintf(file, "	db	%%2\n");
+		fprintf(file, "	dw	%%2\n");
 		fprintf(file, "%%endmacro\n");
 		fprintf(file, "%%define	AMOUNT(val)		val\n");
 		fprintf(file, "%%define	DEST(val)		val\n");
+		fprintf(file, "%%define	FST_SET			0x0000\n");
+		fprintf(file, "%%define	FST_ADD			0x4000\n");
+		fprintf(file, "%%define	FST_POP			0x8000\n");
 		fprintf(file, "struc	go4kFST_val\n");
 		fprintf(file, "	.amount		resd	1\n");
 		fprintf(file, "	.op1		resd	1\n");
@@ -2257,7 +2586,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%ifdef GO4K_USE_FLD\n");
 		fprintf(file, "GO4K_FLD_ID	equ		11\n");
 		fprintf(file, "%%macro	GO4K_FLD 1\n");
-		fprintf(file, "	db	%1\n");
+		fprintf(file, "	db	%%1\n");
 		fprintf(file, "%%endmacro\n");
 		fprintf(file, "%%define	VALUE(val)	val\n");
 		fprintf(file, "struc	go4kFLD_val\n");
@@ -2274,7 +2603,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "GO4K_FSTG_ID	equ		12\n");
 		fprintf(file, "%%macro	GO4K_FSTG 2\n");
 		fprintf(file, "	db	%%1\n");
-		fprintf(file, "	dd	%%2\n");
+		fprintf(file, "	dw	%%2\n");
 		fprintf(file, "%%endmacro\n");
 		fprintf(file, "struc	go4kFSTG_val\n");
 		fprintf(file, "	.amount		resd	1\n");
@@ -2289,7 +2618,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "struc	go4k_instrument\n");
 		fprintf(file, "	.release	resd	1\n");
 		fprintf(file, "	.note		resd	1\n");
-		fprintf(file, "	.workspace	resd	256\n");
+		fprintf(file, "	.workspace	resd	MAX_UNITS*MAX_UNIT_SLOTS\n");
 		fprintf(file, "	.dlloutl	resd	1\n");
 		fprintf(file, "	.dlloutr	resd	1\n");
 		fprintf(file, "	.outl		resd	1\n");
@@ -2302,53 +2631,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "	.global			resb	go4k_instrument.size * MAX_VOICES\n");
 		fprintf(file, "	.size\n");
 		fprintf(file, "endstruc\n");
-#define INDEXED_PATTERN_VALUES__
-#ifdef INDEXED_PATTERN_VALUES
-		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// the pattern values
-		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		fprintf(file, "; //----------------------------------------------------------------------------------------\n");
-		fprintf(file, "; // Pattern Values, sorted by quantity\n");
-		fprintf(file, "; //----------------------------------------------------------------------------------------\n");
-		fprintf(file, "%%ifdef USE_SECTIONS\n");
-		fprintf(file, "section .g4kmuc0 data align=1\n");
-		fprintf(file, "%%else\n");
-		fprintf(file, "section .data\n");
-		fprintf(file, "%%endif\n");
-		fprintf(file, "go4k_pattern_values\n");
-		std::map<int, int> noteCountMap;
-		for (int i = 0; i < ReducedPatterns.size()/PatternSize; i++)
-		{
-			for (int j = 0; j < PatternSize; j++)
-			{
-				int note = ReducedPatterns[i*PatternSize+j];
-				if (note == -1)
-					note = 1;
-				if (noteCountMap.find(note) != noteCountMap.end())
-				{
-					noteCountMap[note] = noteCountMap[note] + 1;
-				}
-				else
-				{
-					noteCountMap[note] = 1;
-				}
-			}
-		}
-		std::list<std::pair<int, int> > noteIndexList;
-		std::map<int, int>::iterator it;
-		for (it = noteCountMap.begin(); it != noteCountMap.end(); it++)
-		{
-			std::pair<int, int> sval(it->second, it->first);
-			noteIndexList.push_back(sval);
-		}
-		noteIndexList.sort();
-		std::list<std::pair<int, int> >::reverse_iterator rit;
-		fprintf(file, "\tdb\t");
-		for (rit = noteIndexList.rbegin(); rit != noteIndexList.rend(); rit++)
-		{
-			fprintf(file, "%d, ", (*rit).second);
-		}
-#endif
+
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// the patterns
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2363,21 +2646,10 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 			fprintf(file, "\tdb\t");
 			for (int j = 0; j < PatternSize; j++)
 			{
-#ifdef INDEXED_PATTERN_VALUES
-				int noteindex = 0;
-				for (rit = noteIndexList.rbegin(); rit != noteIndexList.rend(); rit++)
-				{
-					// TODO: check for hold
-					if (ReducedPatterns[i*PatternSize+j] == (*rit).second)
-						fprintf(file, "%d, ", noteindex);
-					noteindex++;
-				}
-#else
 				if (ReducedPatterns[i*PatternSize+j] >= 0)
 					fprintf(file, "%d, ", ReducedPatterns[i*PatternSize+j]);
 				else
 					fprintf(file, "HLD, ");
-#endif
 			}		
 			fprintf(file, "\n");			
 		}
@@ -2391,16 +2663,39 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "section .data\n");
 		fprintf(file, "%%endif\n");
 		fprintf(file, "go4k_pattern_lists\n");
-		for (int i = 0; i < MAX_INSTRUMENTS; i++)
+#ifdef _8KLANG
+		// write primary plugins pattern indices
+		for (int i = 0; i < mergeMaxInst; i++)
 		{
-			if (!InstrumentUsed[i]) continue;
 			fprintf(file, "Instrument%dList\t\tdb\t", i);
-			for (int j = 0; j < PatternIndices[i].size(); j++)
+			for (int j = 0; j < mergeMaxPatterns; j++)
 			{
-				fprintf(file, "%d, ", PatternIndices[i][j]);
+				fprintf(file, "%d, ", mergePatternIndices[i][j]);
+			}
+			// fill up with 0 indices when secondary plugin has more patterns
+			for (int j = mergeMaxPatterns; j < PatternIndices[0].size(); j++)
+			{
+				fprintf(file, "0, ");
 			}
 			fprintf(file, "\n");
 		}
+#endif
+		for (int i = 0; i < MAX_INSTRUMENTS; i++)
+		{
+			if (!InstrumentUsed[i]) continue;
+			fprintf(file, "Instrument%dList\t\tdb\t", i + mergeMaxInst);
+			for (int j = 0; j < PatternIndices[i].size(); j++)
+			{
+				fprintf(file, "%d, ", PatternIndices[i][j]);
+			} 
+			// fill up with 0 indices when primary plugin had more patterns
+			for (int j = PatternIndices[0].size(); j < mergeMaxPatterns; j++)
+			{
+				fprintf(file, "0, ");
+			}
+			fprintf(file, "\n");
+		}
+
 		fprintf(file, "go4k_pattern_lists_end\n");
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// the instrument commands
@@ -2411,47 +2706,60 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "section .data\n");
 		fprintf(file, "%%endif\n");
 		fprintf(file, "go4k_synth_instructions\n");
+		char comstr[1024];
+		std::string CommandString;
+
+#ifdef _8KLANG
+		// add primary plugin commands first
+		fprintf(file, "%s", mergeCommandString.c_str());
+#endif
 		for (int i = 0; i < MAX_INSTRUMENTS; i++)
 		{
 			if (!InstrumentUsed[i]) continue;
-			fprintf(file, "GO4K_BEGIN_CMDDEF(Instrument%d)\n", i);
-			for (int u = 0; u < MAX_SLOTS; u++)
+			sprintf(comstr, "GO4K_BEGIN_CMDDEF(Instrument%d)\n", i + mergeMaxInst); CommandString += comstr;
+			for (int u = 0; u < MAX_UNITS; u++)
 			{
+				comstr[0] = 0;
+
 				if (SynthObj.InstrumentValues[i][u][0] == M_ENV)
-					fprintf(file, "\tdb GO4K_ENV_ID\n");
+					sprintf(comstr, "\tdb GO4K_ENV_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_VCO)
-					fprintf(file, "\tdb GO4K_VCO_ID\n");
+					sprintf(comstr, "\tdb GO4K_VCO_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_VCF)
-					fprintf(file, "\tdb GO4K_VCF_ID\n");
+					sprintf(comstr, "\tdb GO4K_VCF_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_DST)
-					fprintf(file, "\tdb GO4K_DST_ID\n");
+					sprintf(comstr, "\tdb GO4K_DST_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_DLL)
-					fprintf(file, "\tdb GO4K_DLL_ID\n");
+					sprintf(comstr, "\tdb GO4K_DLL_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_FOP)
-					fprintf(file, "\tdb GO4K_FOP_ID\n");
+					sprintf(comstr, "\tdb GO4K_FOP_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_FST)
 				{
 					FST_valP v = (FST_valP)(SynthObj.InstrumentValues[i][u]);
 					// local storage
 					if (v->dest_stack == -1 || v->dest_stack == i)
-						fprintf(file, "\tdb GO4K_FST_ID\n");
+						sprintf(comstr, "\tdb GO4K_FST_ID\n"); 
 					// global storage
 					else
-						fprintf(file, "\tdb GO4K_FSTG_ID\n");
+						sprintf(comstr, "\tdb GO4K_FSTG_ID\n"); 
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_PAN)
-					fprintf(file, "\tdb GO4K_PAN_ID\n");
+					sprintf(comstr, "\tdb GO4K_PAN_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_OUT)
-					fprintf(file, "\tdb GO4K_OUT_ID\n");
+					sprintf(comstr, "\tdb GO4K_OUT_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_ACC)
-					fprintf(file, "\tdb GO4K_ACC_ID\n");
+					sprintf(comstr, "\tdb GO4K_ACC_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_FLD)
-					fprintf(file, "\tdb GO4K_FLD_ID\n");
-			}
-			fprintf(file, "GO4K_END_CMDDEF\n");
+					sprintf(comstr, "\tdb GO4K_FLD_ID\n"); 
+
+				CommandString += comstr;
+			}			
+			sprintf(comstr, "GO4K_END_CMDDEF\n"); CommandString += comstr;
 		};
+		fprintf(file, "%s", CommandString.c_str());
+
 		fprintf(file, "GO4K_BEGIN_CMDDEF(Global)\n");
-		for (int u = 0; u < MAX_SLOTS; u++)
+		for (int u = 0; u < MAX_UNITS; u++)
 		{
 			if (SynthObj.GlobalValues[u][0] == M_ENV)
 				fprintf(file, "\tdb GO4K_ENV_ID\n");
@@ -2496,22 +2804,31 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%endif\n");
 		fprintf(file, "go4k_synth_parameter_values\n");
 		int delayindex = 0;
+		char valstr[1024];
+		std::string ValueString;
+#ifdef _8KLANG
+		// add primary plugin values first
+		fprintf(file, "%s", mergeValueString.c_str());
+#endif
 		for (int i = 0; i < MAX_INSTRUMENTS; i++)
 		{
 			if (!InstrumentUsed[i]) continue;
-			fprintf(file, "GO4K_BEGIN_PARAMDEF(Instrument%d)\n", i);
-			for (int u = 0; u < MAX_SLOTS; u++)
+			sprintf(valstr, "GO4K_BEGIN_PARAMDEF(Instrument%d)\n", i + mergeMaxInst); ValueString += valstr;
+			for (int u = 0; u < MAX_UNITS; u++)
 			{
+				valstr[0] = 0;
+
 				if (SynthObj.InstrumentValues[i][u][0] == M_ENV)
 				{
 					ENV_valP v = (ENV_valP)(SynthObj.InstrumentValues[i][u]);
-					fprintf(file, "\tGO4K_ENV\tATTAC(%d),DECAY(%d),SUSTAIN(%d),RELEASE(%d),GAIN(%d)\n", v->attac, v->decay, v->sustain, v->release, v->gain);
+					sprintf(valstr, "\tGO4K_ENV\tATTAC(%d),DECAY(%d),SUSTAIN(%d),RELEASE(%d),GAIN(%d)\n", v->attac, v->decay, v->sustain, v->release, v->gain);
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_VCO)
 				{
 					VCO_valP v = (VCO_valP)(SynthObj.InstrumentValues[i][u]);
-					char type[10]; type[0] = 0;
-					char lfo[10]; lfo[0] = 0;
+					char type[16]; type[0] = 0;
+					char lfo[16]; lfo[0] = 0;
+					char stereo[16]; stereo[0] = 0;
 					if (v->flags & VCO_SINE)
 						sprintf(type, "SINE");
 					if (v->flags & VCO_TRISAW)
@@ -2524,43 +2841,49 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						sprintf(type, "GATE");
 					if (v->flags & VCO_LFO)
 						sprintf(lfo, "|LFO");
-					fprintf(file, "\tGO4K_VCO\tTRANSPOSE(%d),DETUNE(%d),PHASE(%d),GATES(%d),COLOR(%d),SHAPE(%d),GAIN(%d),FLAGS(%s%s)\n", v->transpose, v->detune, v->phaseofs, v->gate, v->color, v->shape, v->gain, type, lfo);
+					if (v->flags & VCO_STEREO)
+						sprintf(stereo, "|VCO_STEREO");
+					sprintf(valstr, "\tGO4K_VCO\tTRANSPOSE(%d),DETUNE(%d),PHASE(%d),GATES(%d),COLOR(%d),SHAPE(%d),GAIN(%d),FLAGS(%s%s%s)\n", v->transpose, v->detune, v->phaseofs, v->gate, v->color, v->shape, v->gain, type, lfo, stereo);
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_VCF)
 				{
 					VCF_valP v = (VCF_valP)(SynthObj.InstrumentValues[i][u]);
-					char type[10]; type[0] = 0;
-					if (v->type == VCF_LOWPASS)
+					char type[16]; type[0] = 0;
+					char stereo[16]; stereo[0] = 0;
+					int t = v->type & ~VCF_STEREO;
+					if (t == VCF_LOWPASS)
 						sprintf(type, "LOWPASS");
-					if (v->type == VCF_HIGHPASS)
+					if (t == VCF_HIGHPASS)
 						sprintf(type, "HIGHPASS");
-					if (v->type == VCF_BANDPASS)
+					if (t == VCF_BANDPASS)
 						sprintf(type, "BANDPASS");
-					if (v->type == VCF_BANDSTOP)
+					if (t == VCF_BANDSTOP)
 						sprintf(type, "BANDSTOP");
-					if (v->type == VCF_ALLPASS)
+					if (t == VCF_ALLPASS)
 						sprintf(type, "ALLPASS");
-					if (v->type == VCF_PEAK)
+					if (t == VCF_PEAK)
 						sprintf(type, "PEAK");
-					fprintf(file, "\tGO4K_VCF\tFREQUENCY(%d),RESONANCE(%d),VCFTYPE(%s)\n", v->freq, v->res, type);
+					if (v->type & VCF_STEREO)
+						sprintf(stereo, "|STEREO");
+					sprintf(valstr, "\tGO4K_VCF\tFREQUENCY(%d),RESONANCE(%d),VCFTYPE(%s%s)\n", v->freq, v->res, type, stereo);
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_DST)
 				{
 					DST_valP v = (DST_valP)(SynthObj.InstrumentValues[i][u]);
-					fprintf(file, "\tGO4K_DST\tDRIVE(%d), SNHFREQ(%d)\n", v->drive, v->snhfreq);
+					sprintf(valstr, "\tGO4K_DST\tDRIVE(%d), SNHFREQ(%d), FLAGS(%s)\n", v->drive, v->snhfreq, v->stereo & VCF_STEREO ? "STEREO" : "0");
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_DLL)
 				{
 					DLL_valP v = (DLL_valP)(SynthObj.InstrumentValues[i][u]);
 					if (v->delay < delay_indices.size())
 					{
-						fprintf(file, "\tGO4K_DLL\tPREGAIN(%d),DRY(%d),FEEDBACK(%d),DAMP(%d),FREQUENCY(%d),DEPTH(%d),DELAY(%d),COUNT(%d)\n", 
+						sprintf(valstr, "\tGO4K_DLL\tPREGAIN(%d),DRY(%d),FEEDBACK(%d),DAMP(%d),FREQUENCY(%d),DEPTH(%d),DELAY(%d),COUNT(%d)\n", 
 							v->pregain, v->dry, v->feedback, v->damp, v->freq, v->depth, delay_indices[v->delay], v->count);	
 					}
 					// error handling in case indices are fucked up
 					else
 					{
-						fprintf(file, "\tGO4K_DLL\tPREGAIN(%d),DRY(%d),FEEDBACK(%d),DAMP(%d),FREQUENCY(%d),DEPTH(%d),DELAY(%d),COUNT(%d) ; ERROR\n", 
+						sprintf(valstr, "\tGO4K_DLL\tPREGAIN(%d),DRY(%d),FEEDBACK(%d),DAMP(%d),FREQUENCY(%d),DEPTH(%d),DELAY(%d),COUNT(%d) ; ERROR\n", 
 							v->pregain, v->dry, v->feedback, v->damp, v->freq, v->depth, v->delay, v->count);
 					}
 				}
@@ -2586,7 +2909,9 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						sprintf(type, "FOP_ADDP2");
 					if (v->flags == FOP_LOADNOTE)
 						sprintf(type, "FOP_LOADNOTE");
-					fprintf(file, "\tGO4K_FOP\tOP(%s)\n", type);
+					if (v->flags == FOP_MULP2)
+						sprintf(type, "FOP_MULP2");
+					sprintf(valstr, "\tGO4K_FOP\tOP(%s)\n", type);
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_FST)
 				{
@@ -2601,7 +2926,15 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 							if (SynthObj.InstrumentValues[i][e][0] == M_NONE)
 								emptySkip++;
 						}
-						fprintf(file, "\tGO4K_FST\tAMOUNT(%d),DEST(%d*MAX_WORKSPACE_SLOTS+%d)\n", v->amount, v->dest_unit-emptySkip, v->dest_slot );
+						std::string modes;
+						modes = "FST_SET";
+						if (v->type & FST_ADD)
+							modes = "FST_ADD";
+						//if (v->type & FST_MUL)
+						//	modes = "FST_MUL";
+						if (v->type & FST_POP)
+							modes += "+FST_POP";
+						sprintf(valstr, "\tGO4K_FST\tAMOUNT(%d),DEST(%d*MAX_UNIT_SLOTS+%d+%s)\n", v->amount, v->dest_unit-emptySkip, v->dest_slot, modes.c_str() );
 					}
 					// global storage
 					else
@@ -2610,7 +2943,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						if (v->dest_stack == MAX_INSTRUMENTS)
 							storestack = maxinst;
 						else
-							storestack = InstrumentIndex[v->dest_stack];
+							storestack = InstrumentIndex[v->dest_stack] + mergeMaxInst;
 						// skip empty units on the way to target
 						int emptySkip = 0;
 						for (int e = 0; e < v->dest_unit; e++)
@@ -2629,46 +2962,57 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						// invalid store target, possibly due non usage of the target instrument
 						if (storestack == -1)
 						{
-							fprintf(file, "\tGO4K_FSTG\tAMOUNT(0),DEST(7*4+go4k_instrument.workspace)\n");
+							sprintf(valstr, "\tGO4K_FSTG\tAMOUNT(0),DEST(7*4+go4k_instrument.workspace)\n");
 						}
 						else
 						{
-							fprintf(file, "\tGO4K_FSTG\tAMOUNT(%d),DEST(%d*go4k_instrument.size*MAX_VOICES+%d*MAX_WORKSPACE_SLOTS*4+%d*4+go4k_instrument.workspace)\n", v->amount, storestack, v->dest_unit-emptySkip, v->dest_slot);
+							std::string modes;
+							modes = "FST_SET";
+							if (v->type & FST_ADD)
+								modes = "FST_ADD";
+							//if (v->type & FST_MUL)
+							//	modes = "FST_MUL";
+							if (v->type & FST_POP)
+								modes += "+FST_POP";
+							sprintf(valstr, "\tGO4K_FSTG\tAMOUNT(%d),DEST((%d*go4k_instrument.size*MAX_VOICES/4)+(%d*MAX_UNIT_SLOTS+%d)+(go4k_instrument.workspace/4)+%s)\n", v->amount, storestack, v->dest_unit-emptySkip, v->dest_slot, modes.c_str());
 						}
 					}
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_PAN)
 				{
 					PAN_valP v = (PAN_valP)(SynthObj.InstrumentValues[i][u]);
-					fprintf(file, "\tGO4K_PAN\tPANNING(%d)\n", v->panning);
+					sprintf(valstr, "\tGO4K_PAN\tPANNING(%d)\n", v->panning);
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_OUT)
 				{
 					OUT_valP v = (OUT_valP)(SynthObj.InstrumentValues[i][u]);
-					fprintf(file, "\tGO4K_OUT\tGAIN(%d), AUXSEND(%d)\n", v->gain, v->auxsend);
+					sprintf(valstr, "\tGO4K_OUT\tGAIN(%d), AUXSEND(%d)\n", v->gain, v->auxsend);
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_ACC)
 				{
 					ACC_valP v = (ACC_valP)(SynthObj.InstrumentValues[i][u]);
 					if (v->flags == ACC_OUT)
-						fprintf(file, "\tGO4K_ACC\tACCTYPE(OUTPUT)\n");
+						sprintf(valstr, "\tGO4K_ACC\tACCTYPE(OUTPUT)\n");
 					else
-						fprintf(file, "\tGO4K_ACC\tACCTYPE(AUX)\n");
+						sprintf(valstr, "\tGO4K_ACC\tACCTYPE(AUX)\n");
 				}
 				if (SynthObj.InstrumentValues[i][u][0] == M_FLD)
 				{
 					FLD_valP v = (FLD_valP)(SynthObj.InstrumentValues[i][u]);
-					fprintf(file, "\tGO4K_FLD\tVALUE(%d)\n", v->value);
+					sprintf(valstr, "\tGO4K_FLD\tVALUE(%d)\n", v->value);
 				}
+
+				ValueString += valstr;
 			}
-			fprintf(file, "GO4K_END_PARAMDEF\n");
+			sprintf(valstr, "GO4K_END_PARAMDEF\n"); ValueString += valstr;
 		}
+		fprintf(file, "%s", ValueString.c_str());
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// the global data
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		{
 			fprintf(file, "GO4K_BEGIN_PARAMDEF(Global)\n");
-			for (int u = 0; u < MAX_SLOTS; u++)
+			for (int u = 0; u < MAX_UNITS; u++)
 			{
 				if (SynthObj.GlobalValues[u][0] == M_ENV)
 				{
@@ -2678,8 +3022,9 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 				if (SynthObj.GlobalValues[u][0] == M_VCO)
 				{
 					VCO_valP v = (VCO_valP)(SynthObj.GlobalValues[u]);
-					char type[10]; type[0] = 0;
-					char lfo[10]; lfo[0] = 0;
+					char type[16]; type[0] = 0;
+					char lfo[16]; lfo[0] = 0;
+					char stereo[16]; stereo[0] = 0;
 					if (v->flags & VCO_SINE)
 						sprintf(type, "SINE");
 					if (v->flags & VCO_TRISAW)
@@ -2692,30 +3037,36 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						sprintf(type, "GATE");
 					if (v->flags & VCO_LFO)
 						sprintf(lfo, "|LFO");
-					fprintf(file, "\tGO4K_VCO\tTRANSPOSE(%d),DETUNE(%d),PHASE(%d),GATES(%d),COLOR(%d),SHAPE(%d),GAIN(%d),FLAGS(%s%s)\n", v->transpose, v->detune, v->phaseofs, v->gate, v->color, v->shape, v->gain, type, lfo);
+					if (v->flags & VCO_STEREO)
+						sprintf(stereo, "|VCO_STEREO");
+					fprintf(file, "\tGO4K_VCO\tTRANSPOSE(%d),DETUNE(%d),PHASE(%d),GATES(%d),COLOR(%d),SHAPE(%d),GAIN(%d),FLAGS(%s%s%s)\n", v->transpose, v->detune, v->phaseofs, v->gate, v->color, v->shape, v->gain, type, lfo, stereo);
 				}
 				if (SynthObj.GlobalValues[u][0] == M_VCF)
 				{
 					VCF_valP v = (VCF_valP)(SynthObj.GlobalValues[u]);
-					char type[10]; type[0] = 0;
-					if (v->type == VCF_LOWPASS)
+					char type[16]; type[0] = 0;
+					char stereo[16]; stereo[0] = 0;
+					int t = v->type & ~VCF_STEREO;
+					if (t == VCF_LOWPASS)
 						sprintf(type, "LOWPASS");
-					if (v->type == VCF_HIGHPASS)
+					if (t == VCF_HIGHPASS)
 						sprintf(type, "HIGHPASS");
-					if (v->type == VCF_BANDPASS)
+					if (t == VCF_BANDPASS)
 						sprintf(type, "BANDPASS");
-					if (v->type == VCF_BANDSTOP)
+					if (t == VCF_BANDSTOP)
 						sprintf(type, "BANDSTOP");
-					if (v->type == VCF_ALLPASS)
+					if (t == VCF_ALLPASS)
 						sprintf(type, "ALLPASS");
-					if (v->type == VCF_PEAK)
+					if (t == VCF_PEAK)
 						sprintf(type, "PEAK");
-					fprintf(file, "\tGO4K_VCF\tFREQUENCY(%d),RESONANCE(%d),VCFTYPE(%s)\n", v->freq, v->res, type);
+					if (v->type & VCF_STEREO)
+						sprintf(stereo, "|STEREO");
+					fprintf(file, "\tGO4K_VCF\tFREQUENCY(%d),RESONANCE(%d),VCFTYPE(%s%s)\n", v->freq, v->res, type, stereo);
 				}
 				if (SynthObj.GlobalValues[u][0] == M_DST)
 				{
 					DST_valP v = (DST_valP)(SynthObj.GlobalValues[u]);
-					fprintf(file, "\tGO4K_DST\tDRIVE(%d), SNHFREQ(%d)\n", v->drive, v->snhfreq);
+					fprintf(file, "\tGO4K_DST\tDRIVE(%d), SNHFREQ(%d), FLAGS(%s)\n", v->drive, v->snhfreq, v->stereo & VCF_STEREO ? "STEREO" : "0");
 				}
 				if (SynthObj.GlobalValues[u][0] == M_DLL)
 				{
@@ -2754,6 +3105,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						sprintf(type, "FOP_ADDP2");
 					if (v->flags == FOP_LOADNOTE)
 						sprintf(type, "FOP_LOADNOTE");
+					if (v->flags == FOP_MULP2)
+						sprintf(type, "FOP_MULP2");
 					fprintf(file, "\tGO4K_FOP\tOP(%s)\n", type);
 				}
 				if (SynthObj.GlobalValues[u][0] == M_FST)
@@ -2769,12 +3122,20 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 							if (SynthObj.GlobalValues[e][0] == M_NONE)
 								emptySkip++;
 						}
-						fprintf(file, "\tGO4K_FST\tAMOUNT(%d),DEST(%d*MAX_WORKSPACE_SLOTS+%d)\n", v->amount, v->dest_unit-emptySkip, v->dest_slot );
+						std::string modes;
+						modes = "FST_SET";
+						if (v->type & FST_ADD)
+							modes = "FST_ADD";
+						//if (v->type & FST_MUL)
+						//	modes = "FST_MUL";
+						if (v->type & FST_POP)
+							modes += "+FST_POP";
+						fprintf(file, "\tGO4K_FST\tAMOUNT(%d),DEST(%d*MAX_UNIT_SLOTS+%d+%s)\n", v->amount, v->dest_unit-emptySkip, v->dest_slot, modes );
 					}
 					// global storage
 					else
 					{
-						int storestack = InstrumentIndex[v->dest_stack];
+						int storestack = InstrumentIndex[v->dest_stack] + mergeMaxInst;
 						// skip empty units on the way to target
 						int emptySkip = 0;
 						for (int e = 0; e < v->dest_unit; e++)
@@ -2789,7 +3150,15 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						}
 						else
 						{
-							fprintf(file, "\tGO4K_FSTG\tAMOUNT(%d),DEST(%d*go4k_instrument.size*MAX_VOICES+%d*MAX_WORKSPACE_SLOTS*4+%d*4+go4k_instrument.workspace)\n", v->amount, storestack, v->dest_unit-emptySkip, v->dest_slot );
+							std::string modes;
+							modes = "FST_SET";
+							if (v->type & FST_ADD)
+								modes = "FST_ADD";
+							//if (v->type & FST_MUL)
+							//	modes = "FST_MUL";
+							if (v->type & FST_POP)
+								modes += "+FST_POP";
+							fprintf(file, "\tGO4K_FSTG\tAMOUNT(%d),DEST((%d*go4k_instrument.size*MAX_VOICES/4)+(%d*MAX_UNIT_SLOTS+%d)+(go4k_instrument.workspace/4)+%s)\n", v->amount, storestack, v->dest_unit-emptySkip, v->dest_slot, modes.c_str() );
 						}
 					}
 				}
@@ -2839,124 +3208,74 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%endif\n");
 
 		fclose(file);
-	}
-#ifdef EXPORT_OBJECT_FILE
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// extract resources and compile song
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	std::string compfile = path + "c4klang.exe";
-	std::string asmfile = path + "4klang.asm";
 
-	// First find and load the nasm compiler resource           
-	HRSRC hResource = FindResource(hInst, MAKEINTRESOURCE(IDR_COMP_RES), "BINARY");         
-	HGLOBAL hFileResource = LoadResource(hInst, hResource);
-	// Now open and map this to a disk file           
-	unsigned char *pcompres = (unsigned char *)LockResource(hFileResource);           
-	DWORD dwSize = SizeofResource(hInst, hResource);            
-	// write content
-	FILE *fcompfile = fopen(compfile.c_str(), "wb");
-	int tindex = 0;
-	while (dwSize--)
-	{
-		unsigned char r = *pcompres++;
-		r -= CryptTable[tindex++];
-		fwrite(&r, 1, 1, fcompfile);
-	}
-	fclose(fcompfile);
-
-	// First find and load the asm resource
-	hResource = FindResource(hInst, MAKEINTRESOURCE(IDR_ASM_RES), "BINARY");         
-	hFileResource = LoadResource(hInst, hResource);
-	// Now open and map this to a disk file           
-	unsigned char *pasmres = (unsigned char *)LockResource(hFileResource);           
-	dwSize = SizeofResource(hInst, hResource);            
-	// write content
-	FILE *fasmfile = fopen(asmfile.c_str(), "wb");
-	tindex = 0;
-	while (dwSize--)
-	{
-		unsigned char r = *pasmres++;
-		r -= CryptTable[tindex++];
-		fwrite(&r, 1, 1, fasmfile);
-	}
-	fclose(fasmfile);
-	
-	// compile object
-	char olddir[1024];
-	GetCurrentDirectory(1024, olddir);
-	SetCurrentDirectory(path.c_str());
-
-	std::string comparg;
-	if (objformat == 0) // windows obj
-	{
-		comparg = "c4klang.exe 4klang.asm -fwin32 -o\"" + fpath + "\"";
-	}
-	if (objformat == 1) // linux obj
-	{
-		comparg = "c4klang.exe 4klang.asm -felf32 -o\"" + fpath + "\"";
-	}
-	if (objformat == 2) // macosx obj
-	{
-		comparg = "c4klang.exe 4klang.asm -fmacho32 -o\"" + fpath + "\"";
-	}
-	STARTUPINFO si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory( &si, sizeof(si) );
-    si.cb = sizeof(si);
-    ZeroMemory( &pi, sizeof(pi) );
-	si.dwFlags = STARTF_USESHOWWINDOW;
-	si.wShowWindow = SW_HIDE;
-    // Start the child process. 
-    if( !CreateProcess( NULL,   // No module name (use command line). 
-        (LPSTR)comparg.c_str(), // Command line. 
-        NULL,             // Process handle not inheritable. 
-        NULL,             // Thread handle not inheritable. 
-        FALSE,            // Set handle inheritance to FALSE. 
-        0,                // No creation flags. 
-        NULL,             // Use parent's environment block. 
-        NULL,             // Use parent's starting directory. 
-        &si,              // Pointer to STARTUPINFO structure.
-        &pi )             // Pointer to PROCESS_INFORMATION structure.
-    ) 
-    {
-		// delete temp files
-		DeleteFile(compfile.c_str());	
-		DeleteFile(asmfile.c_str());	
-		DeleteFile(incfile.c_str());	
-		SetCurrentDirectory(olddir);
-		free(CryptTable);
-        MessageBox( 0, "Compile failed", "Uuuups", MB_OK | MB_SETFOREGROUND);
-        return;
-    }
-    // Wait until child process exits.
-    WaitForSingleObject( pi.hProcess, INFINITE );
-    // Close process and thread handles. 
-    CloseHandle( pi.hProcess );
-    CloseHandle( pi.hThread );
-	// delete temp files
-	DeleteFile(compfile.c_str());	
-	DeleteFile(asmfile.c_str());	
-	DeleteFile(incfile.c_str());
-	// restore old directory
-	SetCurrentDirectory(olddir);
-	free(CryptTable);
+				
+		// save additional info for primary plugin so secondary can merge		
+#ifndef _8KLANG		
+		std::string mergefile = storePath + "/8klang.merge";
+		FILE *mfile = fopen(mergefile.c_str(), "wb");
+		// write unit usage info block for primary plugin
+		fwrite(&uses, sizeof(SynthUses), 1, mfile);
+		// write number of instruments for primary plugin
+		fwrite(&maxinst, 4, 1, mfile);
+		// write max number of used patterns for primary plugin
+		int maxpatterns = PatternIndices[0].size();
+		fwrite(&maxpatterns, 4, 1, mfile);		
+		// write reduced patterns for primary plugin
+		int numreducedpatterns = ReducedPatterns.size()/PatternSize;
+		fwrite(&numreducedpatterns, 4, 1, mfile);
+		for (int i = 0; i < ReducedPatterns.size(); i++)
+		{
+			int rpv = ReducedPatterns[i];
+			fwrite(&rpv, 4, 1, mfile);
+		}
+		// write pattern list for primary plugin
+		for (int i = 0; i < MAX_INSTRUMENTS; i++)
+		{
+			if (!InstrumentUsed[i]) continue;
+			for (int j = 0; j < PatternIndices[i].size(); j++)
+			{
+				int pi = PatternIndices[i][j];
+				fwrite(&pi, 4, 1, mfile);
+			}
+		}
+		// write command strings
+		const char* cstr = CommandString.c_str();
+		fwrite(cstr, 1, CommandString.size()+1, mfile);		
+		// write value strings
+		const char* vstr = ValueString.c_str();
+		fwrite(vstr, 1, ValueString.size()+1, mfile);		
+		
+		// write delay times
+		int delaytimes = delay_times.size();
+		fwrite(&delaytimes, 4, 1, mfile);
+		for (int i = 0; i < delay_times.size(); i++)
+		{
+			delaytimes = delay_times[i];
+			fwrite(&delaytimes, 4, 1, mfile);
+		}
+		
+		fclose(mfile);
 #endif
+
+	}
+
 	// write song info file
 	std::string infofile;
 	if (objformat != 0) // not windows obj
-		infofile = fpath.substr(0, fpath.size()-1) + "h";
+		infofile = incfile.substr(0, incfile.size()-1) + "h";
 	else
-		infofile = fpath.substr(0, fpath.size()-3) + "h";
+		infofile = incfile.substr(0, incfile.size()-3) + "h";
 	FILE *fnfofile = fopen(infofile.c_str(), "w");
 	fprintf(fnfofile, "// some useful song defines for 4klang\n");
 	fprintf(fnfofile, "#define SAMPLE_RATE %d\n", 44100);
 	fprintf(fnfofile, "#define BPM %f\n", BeatsPerMinute);
-	fprintf(fnfofile, "#define MAX_INSTRUMENTS %d\n", maxinst);
-	fprintf(fnfofile, "#define MAX_PATTERNS %d\n", PatternIndices[0].size());
+	fprintf(fnfofile, "#define MAX_INSTRUMENTS %d\n", maxinst + mergeMaxInst);
+	fprintf(fnfofile, "#define MAX_PATTERNS %d\n", mergeMaxPatterns > PatternIndices[0].size() ? mergeMaxPatterns : PatternIndices[0].size());
 	fprintf(fnfofile, "#define PATTERN_SIZE_SHIFT %d\n", GetShift2(PatternSize));
 	fprintf(fnfofile, "#define PATTERN_SIZE (1 << PATTERN_SIZE_SHIFT)\n");
 	fprintf(fnfofile, "#define MAX_TICKS (MAX_PATTERNS*PATTERN_SIZE)\n");
-	fprintf(fnfofile, "#define SAMPLES_PER_TICK %d\n", ((int)(44100.0f*4.0f*60.0f/(BeatsPerMinute*16.0f))));
+	fprintf(fnfofile, "#define SAMPLES_PER_TICK %d\n", ((int)(44100.0f*4.0f*60.0f/(BeatsPerMinute*16.0f*TickScaler))));
 	fprintf(fnfofile, "#define MAX_SAMPLES (SAMPLES_PER_TICK*MAX_TICKS)\n");
 	fprintf(fnfofile, "#define POLYPHONY %d\n", SynthObj.Polyphony);
 	if (output16)

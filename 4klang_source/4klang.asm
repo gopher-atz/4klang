@@ -47,7 +47,12 @@ go4k_synth_wrk			resb	go4k_synth.size
 global _go4k_delay_buffer_ofs
 _go4k_delay_buffer_ofs	resd	1
 global _go4k_delay_buffer		
-_go4k_delay_buffer		resd	117*go4kDLL_wrk.size
+_go4k_delay_buffer		resd	16*16*go4kDLL_wrk.size
+
+%ifdef AUTHORING
+global __4klang_current_tick
+__4klang_current_tick	resd	0
+%endif
 
 %ifdef GO4K_USE_ENVELOPE_RECORDINGS
 global __4klang_envelope_buffer
@@ -130,10 +135,12 @@ section .text
 %endif
 
 export_func	FloatRandomNumber@0
+	push	eax
 	imul    eax,dword [_RandSeed],16007
 	mov     dword [_RandSeed], eax 
 	fild	dword [_RandSeed]
 	fidiv	dword [c_RandDiv]
+	pop		eax
 	ret
 	
 ; //========================================================================================
@@ -279,8 +286,7 @@ go4kENV_func_do:
 	mov		eax, dword [ecx-8]					; // is the instrument in release mode (note off)?
 	test	eax, eax
 	je		go4kENV_func_process
-	mov		al, ENV_STATE_RELEASE
-	mov		dword [WRK+go4kENV_wrk.state], eax
+	mov		dword [WRK+go4kENV_wrk.state], ENV_STATE_RELEASE
 go4kENV_func_process:	
 	mov		eax, dword [WRK+go4kENV_wrk.state]
 	fld		dword [WRK+go4kENV_wrk.level]		; //	val		-
@@ -384,8 +390,13 @@ section		.g4kcods	code	align=1
 section .text
 %endif	
 go4kVCO_sine:	
-	fxch									; // p		c
-	fstp	st1								; // p
+	fucomi	st1								; // c		p
+	jnc		short go4kVCO_func_sine_do
+	fstp	st1
+	fsub	st0, st0						; // 0
+	ret	
+go4kVCO_func_sine_do	
+	fdivp	st1, st0						; // p/c
 	fldpi									; // pi		p
 	fadd	st0								; // 2*pi	p
 	fmulp	st1, st0						; // 2*pi*p
@@ -462,11 +473,28 @@ export_func	go4kVCO_func@0
 	mov		eax, dword [ecx-4]
 	test	eax, eax
 	jne		go4kVCO_func_do
+%ifdef GO4K_USE_VCO_STEREO
+	movzx	eax, byte [VAL-1]			; // get flags and check for stereo		
+	test	al, byte VCO_STEREO
+	jz		short go4kVCO_func_nostereoout	
+	fldz
+go4kVCO_func_nostereoout:
+%endif
 	fldz
 	ret
 go4kVCO_func_do:	
 %endif
 	movzx	eax, byte [VAL-1]			; // get flags
+%ifdef GO4K_USE_VCO_STEREO	
+	test	al, byte VCO_STEREO
+	jz		short go4kVCO_func_nopswap
+	fld		dword [WRK+go4kVCO_wrk.phase]	;// swap left/right phase values for first stereo run
+	fld		dword [WRK+go4kVCO_wrk.phase2]
+	fstp	dword [WRK+go4kVCO_wrk.phase]
+	fstp	dword [WRK+go4kVCO_wrk.phase2]
+go4kVCO_func_nopswap:
+%endif	
+go4kVCO_func_process:
 	fld		dword [edx+go4kVCO_val.transpose]
 	fsub	dword [c_0_5]
 %ifdef GO4K_USE_VCO_MOD_TM
@@ -476,6 +504,12 @@ go4kVCO_func_do:
 	fld		dword [edx+go4kVCO_val.detune]
 	fsub	dword [c_0_5]
 	fadd	st0
+%ifdef GO4K_USE_VCO_STEREO
+	test	al, byte VCO_STEREO
+	jz		short go4kVCO_func_nodswap
+	fchs	;// negate detune for stereo
+go4kVCO_func_nodswap:	
+%endif	
 	faddp	st1
 %ifdef GO4K_USE_VCO_MOD_DM	
 	fadd	dword [WRK+go4kVCO_wrk.dm]
@@ -562,6 +596,18 @@ go4kVCO_func_end:
 	fadd	dword [WRK+go4kVCO_wrk.gm]
 %endif
 	fmulp	st1, st0	
+	
+%ifdef GO4K_USE_VCO_STEREO	
+	test	al, byte VCO_STEREO
+	jz		short go4kVCO_func_stereodone
+	sub		al, byte VCO_STEREO
+	fld		dword [WRK+go4kVCO_wrk.phase]	;// swap left/right phase values again for second stereo run
+	fld		dword [WRK+go4kVCO_wrk.phase2]
+	fstp	dword [WRK+go4kVCO_wrk.phase]
+	fstp	dword [WRK+go4kVCO_wrk.phase2]
+	jmp		go4kVCO_func_process
+go4kVCO_func_stereodone:
+%endif		
 	ret
 
 %ifdef USE_SECTIONS
@@ -590,16 +636,31 @@ export_func	go4kVCF_func@0
 go4kVCF_func_do:
 %endif
 	movzx	eax, byte [VAL-1]				; // get type flag 	
+	
 	fld		dword [edx+go4kVCF_val.res]		; //	r		in
 %ifdef GO4K_USE_VCF_MOD_RM	
 	fadd	dword [WRK+go4kVCF_wrk.rm]			
-%endif	
-	fld		dword [edx+go4kVCF_val.freq]	; //	f		r		in
+%endif
+	fstp	dword [esp-8]
+	
+	fld		dword [edx+go4kVCF_val.freq]	; //	f		in
 %ifdef GO4K_USE_VCF_MOD_FM	
 	fadd	dword [WRK+go4kVCF_wrk.fm]
 %endif
 	fmul	st0, st0						; // square the input so we never get negative and also have a smoother behaviour in the lower frequencies
-	fst		dword [WRK+go4kVCF_wrk.freq]	; //	f		r		in
+	fstp	dword [esp-4]					; //	in
+
+%ifdef GO4K_USE_VCF_STEREO	
+	test	al, byte STEREO
+	jz		short go4kVCF_func_process
+	add		WRK, go4kVCF_wrk.low2
+go4kVCF_func_stereoloop:					; // switch channels	
+	fxch	st1								; //	inr		inl		
+%endif
+
+go4kVCF_func_process:
+	fld		dword [esp-8]
+	fld		dword [esp-4]
 	fmul	dword [WRK+go4kVCF_wrk.band]	; //	f*b		r		in
 	fadd	dword [WRK+go4kVCF_wrk.low]		; //    l'		r		in
 	fst		dword [WRK+go4kVCF_wrk.low]		; //    l'		r		in
@@ -607,7 +668,7 @@ go4kVCF_func_do:
 	fmul	dword [WRK+go4kVCF_wrk.band]	; //	r*b		in-l'
 	fsubp	st1, st0						; // 	h'
 	fst		dword [WRK+go4kVCF_wrk.high]	; //    h'
-	fmul	dword [WRK+go4kVCF_wrk.freq]	; //    h'*f
+	fmul	dword [esp-4]					; //    h'*f
 	fadd	dword [WRK+go4kVCF_wrk.band]	; //	b'
 	fstp	dword [WRK+go4kVCF_wrk.band]
 	fldz
@@ -630,15 +691,21 @@ go4kVCF_func_band:
 go4kVCF_func_peak:
 %ifdef GO4K_USE_VCF_PEAK
 	test	al, byte PEAK
-	jz		short go4kVCF_func_end
+	jz		short go4kVCF_func_processdone
 	fadd	dword [WRK+go4kVCF_wrk.low]
 	fsub	dword [WRK+go4kVCF_wrk.high]
 %endif
+go4kVCF_func_processdone:
+	
+%ifdef GO4K_USE_VCF_STEREO		
+	test	al, byte STEREO					; // outr	inl
+	jz		short go4kVCF_func_end
+	sub		al, byte STEREO
+	sub		WRK, go4kVCF_wrk.low2
+	jmp 	go4kVCF_func_stereoloop
+%endif	
+	
 go4kVCF_func_end:							; // value	-		-		-		-
-%ifdef GO4K_USE_UNDENORMALIZE
-	fadd	dword [c_0_5]				;   add and sub small offset to prevent denormalization
-	fsub	dword [c_0_5]
-%endif
 	ret
 
 %ifdef USE_SECTIONS
@@ -658,10 +725,18 @@ section .text
 export_func	go4kDST_func@0
 %ifdef GO4K_USE_DST
 %ifdef GO4K_USE_DST_SH
-	push	2
-%else	
-	push	1
-%endif	
+	%ifdef GO4K_USE_DST_STEREO
+		push	3
+	%else
+		push	2
+	%endif
+%else
+	%ifdef GO4K_USE_DST_STEREO
+		push	2
+	%else
+		push	1
+	%endif
+%endif
 	call	go4kTransformValues
 %ifdef GO4K_USE_DST_CHECK
 ; check if current note still active
@@ -671,6 +746,7 @@ export_func	go4kDST_func@0
 	ret	
 go4kDST_func_do:
 %endif
+	movzx	eax, byte [VAL-1]				; // get type flag
 %ifdef	GO4K_USE_DST_SH
 	fld		dword [edx+go4kDST_val.snhfreq]	; //	snh		in
 %ifdef 	GO4K_USE_DST_MOD_SH	
@@ -688,6 +764,21 @@ go4kDST_func_do:
 	fstp	dword [WRK+go4kDST_wrk.snhphase]; // 	in
 %endif	
 ; // calc pregain and postgain	
+%ifdef GO4K_USE_DST_STEREO
+	test	al, byte STEREO					; // outr	inl
+	jz		short go4kDST_func_mono
+	fxch	st1								; // 	inr		inl
+	fld		dword [edx+go4kDST_val.drive]	; // 	drive		inr		inl
+%ifdef GO4K_USE_DST_MOD_DM	
+	fadd	dword [WRK+go4kDST_wrk.dm]
+%endif
+	call	go4kWaveshaper					; // 	outr	inl
+%ifdef	GO4K_USE_DST_SH		
+	fst		dword [WRK+go4kDST_wrk.out2]	; // 	outr	inl
+%endif	
+	fxch	st1								; // 	inl		outr
+go4kDST_func_mono:	
+%endif	
 	fld		dword [edx+go4kDST_val.drive]	; // 	drive		in
 %ifdef GO4K_USE_DST_MOD_DM	
 	fadd	dword [WRK+go4kDST_wrk.dm]
@@ -701,6 +792,12 @@ go4kDST_func_do:
 go4kDST_func_hold:	
 	fstp	st0								; // in
 	fstp	st0
+%ifdef GO4K_USE_DST_STEREO
+	test	al, byte STEREO					; // outr	inl
+	jz		short go4kDST_func_monohold
+	fld		dword [WRK+go4kDST_wrk.out2]	; // out2
+go4kDST_func_monohold:	
+%endif	
 	fld		dword [WRK+go4kDST_wrk.out]		; // out
 	ret
 %endif	
@@ -953,26 +1050,22 @@ go4kFOP_func_mul:
 	jnz		go4kFOP_func_addp2
 	fmul	st1
 	ret
-%ifdef GO4K_USE_FOP_LOADNOTE
 go4kFOP_func_addp2:
 	dec		eax
 	jnz		go4kFOP_func_loadnote
 	faddp	st2, st0
 	faddp	st2, st0
 	ret
-go4kFOP_func_loadnote:					
+go4kFOP_func_loadnote:		
+	dec		eax
+	jnz		go4kFOP_func_mulp2			
 	fild	dword [ecx-4]
 	fmul	dword [c_i128]
 	ret
-%else
-go4kFOP_func_addp2:
-	dec		eax
-	jnz		go4kFOP_func_dummy+1			; // now this is no valid jump address (just to please the packer) but if we run in that case we're fucked up anyway
-	faddp	st2, st0
-go4kFOP_func_dummy:					
-	faddp	st2, st0
-	ret	
-%endif	
+go4kFOP_func_mulp2:
+	fmulp	st2, st0
+	fmulp	st2, st0
+	ret
 	
 %ifdef USE_SECTIONS	
 section		.g4kcodh	code	align=1
@@ -989,13 +1082,23 @@ section .text
 ; // DIRTY	:		
 ; //----------------------------------------------------------------------------------------
 export_func	go4kFST_func@0
-	push	2
+	push	1
 	call	go4kTransformValues
 	fld		dword [edx+go4kFST_val.amount]
 	fsub	dword [c_0_5]
 	fadd	st0
 	fmul	st1
-	fstp	dword [ecx+eax*4]						; // eax already contains the destination from the go4kTransformValues call
+	lodsw											
+	and		eax, 0x00003fff					; // eax is destination slot
+	test	word [VAL-2], FST_ADD
+	jz		go4kFST_func_set
+	fadd	dword [ecx+eax*4]
+go4kFST_func_set:	
+	fstp	dword [ecx+eax*4]	
+	test	word [VAL-2], FST_POP
+	jz		go4kFST_func_done
+	fstp	st0
+go4kFST_func_done:	
 	ret
 
 %ifdef USE_SECTIONS	
@@ -1041,30 +1144,39 @@ section .text
 ; // DIRTY	:		
 ; //----------------------------------------------------------------------------------------
 export_func	go4kFSTG_func@0
-	push	5
+	push	1
 	call	go4kTransformValues
 %ifdef GO4K_USE_FSTG_CHECK
 ; check if current note still active
 	mov		eax, dword [ecx-4]
 	test	eax, eax
 	jne		go4kFSTG_func_do
-	ret
+	lodsw
+	jmp		go4kFSTG_func_testpop
 go4kFSTG_func_do:	
 %endif
 	fld		dword [edx+go4kFST_val.amount]
 	fsub	dword [c_0_5]
 	fadd	st0
-	fmul	st1
-	mov		eax, dword [VAL-4]
+	fmul	st1	
+	lodsw											
+	and		eax, 0x00003fff					; // eax is destination slot
+	test	word [VAL-2], FST_ADD
+	jz		go4kFSTG_func_set
+	fadd	dword [go4k_synth_wrk+eax*4]
+go4kFSTG_func_set:	
 %if MAX_VOICES > 1	
-	fst		dword [go4k_synth_wrk+eax]
-	fstp	dword [go4k_synth_wrk+eax+go4k_instrument.size]
+	fst		dword [go4k_synth_wrk+eax*4]
+	fstp	dword [go4k_synth_wrk+eax*4+go4k_instrument.size]
 %else
-	fstp	dword [go4k_synth_wrk+eax]	
-%endif	
-	
-	ret	
-
+	fstp	dword [go4k_synth_wrk+eax*4]	
+%endif
+go4kFSTG_func_testpop:	
+	test	word [VAL-2], FST_POP
+	jz		go4kFSTG_func_done
+	fstp	st0
+go4kFSTG_func_done:	
+	ret
 %endif	
 
 %ifdef USE_SECTIONS	
@@ -1117,7 +1229,7 @@ export_func	go4kOUT_func@0								;// l		r
 	push	2
 	call	go4kTransformValues
 	pushad
-	lea		edi, [ecx+256*4]
+	lea		edi, [ecx+MAX_UNITS*MAX_UNIT_SLOTS*4]
 	fld		st1											;//	r		l		r
 	fld		st1											;// l		r		l		r
 	fld		dword [edx+go4kOUT_val.auxsend]				;// as		l		r		l		r
@@ -1158,13 +1270,13 @@ export_func	go4kOUT_func@0								;// l		r
 	fadd	dword [WRK+go4kOUT_wrk.gm]					;//	gm		l		r
 %endif	
 	fmulp	st1, st0									;//	l'		r
-	fstp	dword [ecx+256*4+0]							;// r
+	fstp	dword [ecx+MAX_UNITS*MAX_UNIT_SLOTS*4+0]							;// r
 	fld		dword [edx+go4kOUT_val.gain]				;// g		r
 %ifdef 	GO4K_USE_OUT_MOD_GM
 	fadd	dword [WRK+go4kOUT_wrk.gm]					;//	gm		r
 %endif	
 	fmulp	st1, st0									;//	r'
-	fstp	dword [ecx+256*4+4]							;// -
+	fstp	dword [ecx+MAX_UNITS*MAX_UNIT_SLOTS*4+4]							;// -
 	
 %endif		
 	ret	
@@ -1248,7 +1360,7 @@ go4kUpdateInstrument_newNote:
 %endif	
 	pushad
 	xor		eax, eax
-	mov		ecx, (8+256*4)/4						; // clear only relase, note and workspace
+	mov		ecx, (8+MAX_UNITS*MAX_UNIT_SLOTS*4)/4	; // clear only relase, note and workspace
 	rep		stosd
 	popad
 	mov		dword [edi+4], edx						; // set requested note as current note
@@ -1476,6 +1588,9 @@ go4k_render_nogroove:
 		jl		go4k_render_sampleloop	
 	pop		ecx	
 	inc		ecx
+%ifdef AUTHORING
+	mov		dword[__4klang_current_tick], ecx
+%endif
 	cmp		ecx, dword MAX_TICKS
 	jl		go4k_render_tickloop
 %ifdef GO4K_USE_BUFFER_RECORDINGS	
@@ -1507,7 +1622,7 @@ go4k_VM_process_loop:
 	test	eax, eax	
 	je		go4k_VM_process_done						; // command byte = 0? so done
 	call	dword [eax*4+go4k_synth_commands]
-	add		WRK, MAX_WORKSPACE_SLOTS*4					; // go to next workspace slot
+	add		WRK, MAX_UNIT_SLOTS*4					; // go to next workspace slot
 	jmp		short go4k_VM_process_loop
 go4k_VM_process_done:	
 	add		edi, go4k_instrument.size		; // go to next instrument voice
