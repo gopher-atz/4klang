@@ -14,6 +14,7 @@
 #define IDD_OUT                         109
 #define IDD_ACC                         110
 #define IDD_FLD                         111
+#define IDD_GLITCH                      112
 #define IDD_GO4KVSTIDIALOG              115
 #define IDD_INSTRUMENT_STACK            120
 #define IDD_GLOBAL_STACK                121
@@ -65,6 +66,7 @@
 #define IDC_GSTACK_VALID                1041
 #define IDC_PATTERN_QUANT               1042
 #define IDC_INSTRUMENTLINK              1043
+#define IDC_RECORDBUSYSIGNAL            1044
 #define IDC_UNIT_RESET                  1050
 #define IDC_UNIT_COPY                   1051
 #define IDC_UNIT_PASTE                  1052
@@ -974,14 +976,25 @@
 #define IDC_GSTACK__SET32               3982
 #define IDC_GSTACK__RESET32             3983
 #define IDC_DST_STEREO                  5004
+#define IDC_GLITCH_ACTIVE               5050
+#define IDC_GLITCH_ACTIVE_VAL           5051
+#define IDC_GLITCH_DRY                  5052
+#define IDC_GLITCH_DRY_VAL              5053
+#define IDC_GLITCH_DSIZE                5054
+#define IDC_GLITCH_DSIZE_VAL            5055
+#define IDC_GLITCH_DPITCH               5056
+#define IDC_GLITCH_DPITCH_VAL           5057
+#define IDC_GLITCH_DTIME                5058
+#define IDC_GLITCH_DTIME_VAL            5059
+
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        124
+#define _APS_NEXT_RESOURCE_VALUE        125
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         5005
+#define _APS_NEXT_CONTROL_VALUE         5015
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

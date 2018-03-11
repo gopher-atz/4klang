@@ -30,6 +30,7 @@ extern "C" void __stdcall go4kPAN_func();
 extern "C" void __stdcall go4kOUT_func();
 extern "C" void __stdcall go4kACC_func();
 extern "C" void __stdcall go4kFLD_func();
+extern "C" void __stdcall go4kGLITCH_func();
 extern "C" DWORD go4k_delay_buffer_ofs;
 extern "C" float go4k_delay_buffer;
 extern "C" WORD go4k_delay_times;
@@ -54,7 +55,8 @@ static go4kFunc SynthFuncs[] =
 	go4kPAN_func,
 	go4kOUT_func,
 	go4kACC_func,
-	go4kFLD_func
+	go4kFLD_func,
+	go4kGLITCH_func
 };
 
 static float BeatsPerMinute = 120.0f;
@@ -66,6 +68,7 @@ static int Solo = 0;
 // stream structures for recording sound
 static DWORD samplesProcessed = 0;
 static bool Recording = false;
+static bool RecordingNoise = true;
 static bool FirstRecordingEvent = false;
 static DWORD PatternSize = 16;
 static float SamplesPerTick;
@@ -227,7 +230,7 @@ void Go4kVSTi_FlipInstrumentSlots(char channel, int a, int b)
 		memcpy(w1, temp, MAX_UNIT_SLOTS*4);
 	}
 	// reset dll workspaces, they are invalid now
-	if (v1[0] == M_DLL && v2[0] == M_DLL)
+	if ((v1[0] == M_DLL || v1[0] == M_GLITCH) && (v2[0] == M_DLL || v2[0] == M_GLITCH))
 	{
 		Go4kVSTi_ClearDelayLines();
 		Go4kVSTi_UpdateDelayTimes();
@@ -257,7 +260,7 @@ void Go4kVSTi_FlipGlobalSlots(int a, int b)
 		memcpy(w1, temp, MAX_UNIT_SLOTS*4);
 	}
 	// reset dll workspaces, they are invalid now
-	if (v1[0] == M_DLL && v2[0] == M_DLL)
+	if ((v1[0] == M_DLL || v1[0] == M_GLITCH) && (v2[0] == M_DLL || v2[0] == M_GLITCH))
 	{
 		Go4kVSTi_ClearDelayLines();
 		Go4kVSTi_UpdateDelayTimes();
@@ -356,6 +359,15 @@ void Go4kVSTi_InitSlot(BYTE* slot, int channel, int type)
 		FLD_valP v = (FLD_valP)slot;
 		v->value		=  64;
 	}
+	if (type == M_GLITCH)
+	{
+		GLITCH_valP v = (GLITCH_valP)slot;
+		v->active		=   0;
+		v->dry			=   0;
+		v->dsize		=  64;
+		v->dpitch		=  64;
+		v->guidelay		=  40;
+	}
 }
 
 // init a instrument slot
@@ -367,7 +379,7 @@ void Go4kVSTi_InitInstrumentSlot(char channel, int s, int type)
 	Go4kVSTi_ClearInstrumentSlot(channel, s);
 	// init with default values
 	Go4kVSTi_InitSlot(SynthObj.InstrumentValues[channel][s], channel, type);
-	if (type == M_DLL)
+	if (type == M_DLL || type == M_GLITCH)
 	{
 		Go4kVSTi_ClearDelayLines();
 		Go4kVSTi_UpdateDelayTimes();
@@ -383,7 +395,7 @@ void Go4kVSTi_InitGlobalSlot(int s, int type)
 	Go4kVSTi_ClearGlobalSlot(s);
 	// init with default values
 	Go4kVSTi_InitSlot(SynthObj.GlobalValues[s], 16, type);
-	if (type == M_DLL)
+	if (type == M_DLL || type == M_GLITCH)
 	{
 		Go4kVSTi_ClearDelayLines();
 		Go4kVSTi_UpdateDelayTimes();
@@ -457,7 +469,7 @@ void Go4kVSTi_UpdateDelayTimes()
 
 			if (v->id == M_DLL)
 			{
-				DLL_valP v = (DLL_valP)(SynthObj.InstrumentValues[i][u]);
+				//DLL_valP v = (DLL_valP)(SynthObj.InstrumentValues[i][u]);
 				if (v->reverb)
 				{
 					if (v->leftreverb)
@@ -500,6 +512,22 @@ void Go4kVSTi_UpdateDelayTimes()
 					}
 					delayindex++;
 				}
+			}
+			
+			if (v->id == M_GLITCH)
+			{
+				GLITCH_valP v2 = (GLITCH_valP)(v);
+				int delay;
+				float ftime;
+				float quarterlength = 60.0f/Go4kVSTi_GetBPM();
+				ftime = quarterlength*delayTimeFraction[v2->guidelay>>2];
+				delay = 44100.0f*ftime*0.25; // slice time is in fractions per beat (therefore / 4)
+				if (delay >= 65536)
+					delay = 65535;
+				(&go4k_delay_times)[delayindex] = delay;
+				v2->delay = delayindex;
+				
+				delayindex++;
 			}
 		}
 	}
@@ -546,328 +574,331 @@ void Go4kVSTi_Tick(float *oleft, float *oright, int samples)
 	if (Recording)
 	{
 		samplesProcessed += samples;
-		// send a stayalive signal to the host
-		for (int i = 0; i < samples; i++)
+
+		if (RecordingNoise)
 		{
-			float signal = 0.0625*((float)(i&63)/32.0f - 1.0f);
-			*oleft++ = signal;
-			*oright++ = signal;
+			// send a stayalive signal to the host
+			for (int i = 0; i < samples; i++)
+			{
+				float signal = 0.03125*((float)(i & 255) / 128.0f - 1.0f);
+				*oleft++ = signal;
+				*oright++ = signal;
+			}
+			return;
 		}
 	}
-	else
+
+	// do as many samples as requested
+	int s = 0;
+	while (s < samples)
 	{
-		// do as many samples as requested
-		int s = 0;
-		while (s < samples)
-		{
-			float left=0.0f;
-			float right=0.0f;
+		float left=0.0f;
+		float right=0.0f;
 		
-			go4k_delay_buffer_ofs = (DWORD)(&go4k_delay_buffer);
-			// loop all instruments
-			for (int i = 0; i < MAX_INSTRUMENTS; i++)
+		go4k_delay_buffer_ofs = (DWORD)(&go4k_delay_buffer);
+		// loop all instruments
+		for (int i = 0; i < MAX_INSTRUMENTS; i++)
+		{
+			// solo mode and not the channel we want?
+			if (Solo && i != SoloChannel)
 			{
-				// solo mode and not the channel we want?
-				if (Solo && i != SoloChannel)
+				// loop all voices and clear outputs
+				for (int p = 0; p < SynthObj.Polyphony; p++)
 				{
-					// loop all voices and clear outputs
-					for (int p = 0; p < SynthObj.Polyphony; p++)
-					{
-						InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
-						iwork->dlloutl = 0.0f;
-						iwork->dlloutr = 0.0f;
-						iwork->outl = 0.0f;
-						iwork->outr = 0.0f;
-					}
-					// adjust delay index
-					for (int s = 0; s < MAX_UNITS; s++)
+					InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
+					iwork->dlloutl = 0.0f;
+					iwork->dlloutr = 0.0f;
+					iwork->outl = 0.0f;
+					iwork->outr = 0.0f;
+				}
+				// adjust delay index
+				for (int s = 0; s < MAX_UNITS; s++)
+				{		
+					BYTE* val = SynthObj.InstrumentValues[i][s];
+					if (val[0] == M_DLL || val[0] == M_GLITCH)
+						go4k_delay_buffer_ofs += (5+65536)*4*SynthObj.Polyphony;
+				}
+				// go to next instrument
+				continue;
+			}
+			// if the instrument signal stack is valid and we still got a signal from that instrument
+			if (SynthObj.InstrumentSignalValid[i] && (fabs(SynthObj.SignalTrace[i]) > 0.00001f))
+			{
+				float sumSignals = 0.0f;
+				// loop all voices
+				for (int p = 0; p < SynthObj.Polyphony; p++)
+				{
+					InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
+					float *lwrk = iwork->workspace;
+					DWORD inote = iwork->note;
+					// loop each slot
+					for (int s = 0; s <= SynthObj.HighestSlotIndex[i]; s++)
 					{		
 						BYTE* val = SynthObj.InstrumentValues[i][s];
-						if (val[0] == M_DLL)
-							go4k_delay_buffer_ofs += (5+65536)*4*SynthObj.Polyphony;
-					}
-					// go to next instrument
-					continue;
-				}
-				// if the instrument signal stack is valid and we still got a signal from that instrument
-				if (SynthObj.InstrumentSignalValid[i] && (fabs(SynthObj.SignalTrace[i]) > 0.00001f))
-				{
-					float sumSignals = 0.0f;
-					// loop all voices
-					for (int p = 0; p < SynthObj.Polyphony; p++)
-					{
-						InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
-						float *lwrk = iwork->workspace;
-						DWORD inote = iwork->note;
-						// loop each slot
-						for (int s = 0; s <= SynthObj.HighestSlotIndex[i]; s++)
-						{		
-							BYTE* val = SynthObj.InstrumentValues[i][s];
-							float *wrk = &(iwork->workspace[s*MAX_UNIT_SLOTS]);
-							if (val[0] == M_FST)
+						float *wrk = &(iwork->workspace[s*MAX_UNIT_SLOTS]);
+						if (val[0] == M_FST)
+						{
+							FST_valP v = (FST_valP)val;
+							// if a target slot is set
+							if (v->dest_slot != -1)
 							{
-								FST_valP v = (FST_valP)val;
-								// if a target slot is set
-								if (v->dest_slot != -1)
+								InstrumentWorkspaceP mwork;
+								int polyphonicStore = SynthObj.Polyphony;
+								int stack = v->dest_stack;
+								// local storage?
+								if (stack == -1 || stack == i)
 								{
-									InstrumentWorkspaceP mwork;
-									int polyphonicStore = SynthObj.Polyphony;
-									int stack = v->dest_stack;
-									// local storage?
-									if (stack == -1 || stack == i)
-									{
-										// only store the sample in the current workspace
-										polyphonicStore = 1;
-										mwork = iwork;
-									}
-									else if (stack == MAX_INSTRUMENTS)
-										mwork = &(SynthObj.GlobalWork);
-									else
-										mwork = &(SynthObj.InstrumentWork[stack*MAX_POLYPHONY]);
-								
-									float* mdest = &(mwork->workspace[v->dest_unit*MAX_UNIT_SLOTS + v->dest_slot]);
-									float amount = (2.0f*v->amount - 128.0f)*0.0078125f;
-									int storetype = v->type;
-									for (int stc = 0; stc < polyphonicStore; stc++)
-									{	
-										__asm
-										{
-											push	eax
-											push	ebx
-								
-											mov		eax, mdest
-											mov		ebx, storetype
-
-											fld		amount
-											fmul	st(0), st(1)
-								
-										//	test	ebx, FST_MUL
-										//	jz		store_func_add
-										//	fmul	dword ptr [eax] 
-										//	jmp		store_func_set
-										//store_func_add:
-											test	ebx, FST_ADD
-											jz		store_func_set
-											fadd	dword ptr [eax] 
-										store_func_set:
-											fstp	dword ptr [eax]
-										store_func_done:
-											pop		ebx
-											pop		eax
-										}
-										mdest += sizeof(InstrumentWorkspace)/4;
-									}
-									// remove signal on pop flag
-									if (storetype & FST_POP)
-									{
-										_asm  fstp	st(0);
-									}
+									// only store the sample in the current workspace
+									polyphonicStore = 1;
+									mwork = iwork;
 								}
-							}
-							else
-							{
-								// only process if note active or dll unit
-								if (val[0])
-								{
-									// set up and call synth core func
+								else if (stack == MAX_INSTRUMENTS)
+									mwork = &(SynthObj.GlobalWork);
+								else
+									mwork = &(SynthObj.InstrumentWork[stack*MAX_POLYPHONY]);
+								
+								float* mdest = &(mwork->workspace[v->dest_unit*MAX_UNIT_SLOTS + v->dest_slot]);
+								float amount = (2.0f*v->amount - 128.0f)*0.0078125f;
+								int storetype = v->type;
+								for (int stc = 0; stc < polyphonicStore; stc++)
+								{	
 									__asm
 									{
-										pushad
-										xor		eax, eax
-										mov		esi, val
-										lodsb
-										mov		eax, dword ptr [SynthFuncs+eax*4]
-										mov		ebx, inote
-										mov		ecx, lwrk
-										mov		ebp, wrk
-										call	eax						
-										popad
+										push	eax
+										push	ebx
+								
+										mov		eax, mdest
+										mov		ebx, storetype
+
+										fld		amount
+										fmul	st(0), st(1)
+								
+									//	test	ebx, FST_MUL
+									//	jz		store_func_add
+									//	fmul	dword ptr [eax] 
+									//	jmp		store_func_set
+									//store_func_add:
+										test	ebx, FST_ADD
+										jz		store_func_set
+										fadd	dword ptr [eax] 
+									store_func_set:
+										fstp	dword ptr [eax]
+									store_func_done:
+										pop		ebx
+										pop		eax
 									}
+									mdest += sizeof(InstrumentWorkspace)/4;
 								}
-							}
-						}
-						// check for end of note
-						DWORD envstate = *((BYTE*)(lwrk));
-						if (envstate == ENV_STATE_OFF)
-						{
-							iwork->note = 0;
-						}
-						sumSignals += fabsf(iwork->outl) + fabsf(iwork->outr) + fabsf(iwork->dlloutl) + fabsf(iwork->dlloutr);
-					}
-					// update envelope follower only for non control instruments. (1s attack rate) for total instrument signal
-					if (SynthObj.ControlInstrument[i])
-						SynthObj.SignalTrace[i] = 1.0f;
-					else
-						SynthObj.SignalTrace[i] = sumSignals + 0.999977324f * ( SynthObj.SignalTrace[i] - sumSignals );	
-				}
-				// instrument stack invalid
-				else
-				{
-					// adjust delay index
-					for (int s = 0; s < MAX_UNITS; s++)
-					{		
-						BYTE* val = SynthObj.InstrumentValues[i][s];
-						if (val[0] == M_DLL)
-							go4k_delay_buffer_ofs += (5+65536)*4*SynthObj.Polyphony;
-					}
-					// loop all voices
-					for (int p = 0; p < SynthObj.Polyphony; p++)
-					{
-						InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
-						iwork->dlloutl = 0.0f;
-						iwork->dlloutr = 0.0f;
-						iwork->outl = 0.0f;
-						iwork->outr = 0.0f;
-					}
-				}
-			}
-			// if the global stack is valid
-			if (SynthObj.GlobalSignalValid)
-			{
-				InstrumentWorkspaceP gwork = &(SynthObj.GlobalWork);
-				float *lwrk = gwork->workspace;
-				DWORD gnote = 1;
-				gwork->note = 1;
-				// loop all global slots
-				for (int s = 0; s <= SynthObj.HighestSlotIndex[16]; s++)
-				{		
-					BYTE* val = SynthObj.GlobalValues[s];
-					float *wrk = &(lwrk[s*MAX_UNIT_SLOTS]);
-					// manually accumulate signals
-					float ACCL = 0.0f;
-					float ACCR = 0.0f;
-					if (val[0] == M_ACC)
-					{
-						ACC_valP av = (ACC_valP)val;
-						if (av->flags == ACC_OUT)
-						{
-							for (int i = 0; i < MAX_INSTRUMENTS; i++)
-							{
-								for (int p = 0; p < SynthObj.Polyphony; p++)
+								// remove signal on pop flag
+								if (storetype & FST_POP)
 								{
-									ACCL += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].outl;
-									ACCR += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].outr;
+									_asm  fstp	st(0);
 								}
 							}
 						}
 						else
 						{
-							for (int i = 0; i < MAX_INSTRUMENTS; i++)
+							// only process if note active or dll unit
+							if (val[0])
 							{
-								for (int p = 0; p < SynthObj.Polyphony; p++)
-								{
-									ACCL += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].dlloutl;
-									ACCR += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].dlloutr;
-								}
-							}
-						}
-						// push the accumulated signals on the fp stack
-						__asm
-						{
-							fld		ACCR
-							fld		ACCL
-						}
-					}
-					// no ACC unit, check store
-					else if (val[0] == M_FST)
-					{
-						FST_valP v = (FST_valP)val;
-						// if a target slot is set
-						if (v->dest_slot != -1)
-						{
-							InstrumentWorkspaceP mwork;
-							int polyphonicStore = SynthObj.Polyphony;
-							int stack = v->dest_stack;
-							// local storage?
-							if (stack == -1 || stack == MAX_INSTRUMENTS)
-							{
-								// only store the sample in the current workspace
-								polyphonicStore = 1;
-								mwork = &(SynthObj.GlobalWork);
-							}
-							else
-								mwork = &(SynthObj.InstrumentWork[stack*MAX_POLYPHONY]);
-						
-							float* mdest = &(mwork->workspace[v->dest_unit*MAX_UNIT_SLOTS + v->dest_slot]);
-							float amount = (2.0f*v->amount - 128.0f)*0.0078125f;;
-							int storetype = v->type;
-							for (int stc = 0; stc < polyphonicStore; stc++)
-							{
+								// set up and call synth core func
 								__asm
 								{
-									push	eax
-									push	ebx
-								
-									mov		eax, mdest
-									mov		ebx, storetype
-
-									fld		amount
-									fmul	st(0), st(1)
-								
-								//	test	ebx, FST_MUL
-								//	jz		gstore_func_add
-								//	fmul	dword ptr [eax] 
-								//	jmp		gstore_func_set
-								//gstore_func_add:
-									test	ebx, FST_ADD
-									jz		gstore_func_set
-									fadd	dword ptr [eax] 
-								gstore_func_set:
-									fstp	dword ptr [eax]
-								gstore_func_done:
-									pop		ebx
-									pop		eax
+									pushad
+									xor		eax, eax
+									mov		esi, val
+									lodsb
+									mov		eax, dword ptr [SynthFuncs+eax*4]
+									mov		ebx, inote
+									mov		ecx, lwrk
+									mov		ebp, wrk
+									call	eax						
+									popad
 								}
-								mdest += sizeof(InstrumentWorkspace)/4;
-							}
-							// remove signal on pop flag
-							if (storetype & FST_POP)
-							{
-								_asm  fstp	st(0);
 							}
 						}
 					}
-					// just call synth core func
+					// check for end of note
+					DWORD envstate = *((BYTE*)(lwrk));
+					if (envstate == ENV_STATE_OFF)
+					{
+						iwork->note = 0;
+					}
+					sumSignals += fabsf(iwork->outl) + fabsf(iwork->outr) + fabsf(iwork->dlloutl) + fabsf(iwork->dlloutr);
+				}
+				// update envelope follower only for non control instruments. (1s attack rate) for total instrument signal
+				if (SynthObj.ControlInstrument[i])
+					SynthObj.SignalTrace[i] = 1.0f;
+				else
+					SynthObj.SignalTrace[i] = sumSignals + 0.999977324f * ( SynthObj.SignalTrace[i] - sumSignals );	
+			}
+			// instrument stack invalid
+			else
+			{
+				// adjust delay index
+				for (int s = 0; s < MAX_UNITS; s++)
+				{		
+					BYTE* val = SynthObj.InstrumentValues[i][s];
+					if (val[0] == M_DLL || val[0] == M_GLITCH)
+						go4k_delay_buffer_ofs += (5+65536)*4*SynthObj.Polyphony;
+				}
+				// loop all voices
+				for (int p = 0; p < SynthObj.Polyphony; p++)
+				{
+					InstrumentWorkspaceP iwork = &(SynthObj.InstrumentWork[i*MAX_POLYPHONY+p]);
+					iwork->dlloutl = 0.0f;
+					iwork->dlloutr = 0.0f;
+					iwork->outl = 0.0f;
+					iwork->outr = 0.0f;
+				}
+			}
+		}
+		// if the global stack is valid
+		if (SynthObj.GlobalSignalValid)
+		{
+			InstrumentWorkspaceP gwork = &(SynthObj.GlobalWork);
+			float *lwrk = gwork->workspace;
+			DWORD gnote = 1;
+			gwork->note = 1;
+			// loop all global slots
+			for (int s = 0; s <= SynthObj.HighestSlotIndex[16]; s++)
+			{		
+				BYTE* val = SynthObj.GlobalValues[s];
+				float *wrk = &(lwrk[s*MAX_UNIT_SLOTS]);
+				// manually accumulate signals
+				float ACCL = 0.0f;
+				float ACCR = 0.0f;
+				if (val[0] == M_ACC)
+				{
+					ACC_valP av = (ACC_valP)val;
+					if (av->flags == ACC_OUT)
+					{
+						for (int i = 0; i < MAX_INSTRUMENTS; i++)
+						{
+							for (int p = 0; p < SynthObj.Polyphony; p++)
+							{
+								ACCL += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].outl;
+								ACCR += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].outr;
+							}
+						}
+					}
 					else
 					{
-						if (val[0])
+						for (int i = 0; i < MAX_INSTRUMENTS; i++)
+						{
+							for (int p = 0; p < SynthObj.Polyphony; p++)
+							{
+								ACCL += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].dlloutl;
+								ACCR += SynthObj.InstrumentWork[i*MAX_POLYPHONY+p].dlloutr;
+							}
+						}
+					}
+					// push the accumulated signals on the fp stack
+					__asm
+					{
+						fld		ACCR
+						fld		ACCL
+					}
+				}
+				// no ACC unit, check store
+				else if (val[0] == M_FST)
+				{
+					FST_valP v = (FST_valP)val;
+					// if a target slot is set
+					if (v->dest_slot != -1)
+					{
+						InstrumentWorkspaceP mwork;
+						int polyphonicStore = SynthObj.Polyphony;
+						int stack = v->dest_stack;
+						// local storage?
+						if (stack == -1 || stack == MAX_INSTRUMENTS)
+						{
+							// only store the sample in the current workspace
+							polyphonicStore = 1;
+							mwork = &(SynthObj.GlobalWork);
+						}
+						else
+							mwork = &(SynthObj.InstrumentWork[stack*MAX_POLYPHONY]);
+						
+						float* mdest = &(mwork->workspace[v->dest_unit*MAX_UNIT_SLOTS + v->dest_slot]);
+						float amount = (2.0f*v->amount - 128.0f)*0.0078125f;;
+						int storetype = v->type;
+						for (int stc = 0; stc < polyphonicStore; stc++)
 						{
 							__asm
 							{
-								pushad
-								xor		eax, eax
-								mov		esi, val
-								lodsb
-								mov		eax, dword ptr [SynthFuncs+eax*4]
-								mov		ebx, gnote
-								mov		ecx, lwrk
-								mov		ebp, wrk
-								call	eax						
-								popad
+								push	eax
+								push	ebx
+								
+								mov		eax, mdest
+								mov		ebx, storetype
+
+								fld		amount
+								fmul	st(0), st(1)
+								
+							//	test	ebx, FST_MUL
+							//	jz		gstore_func_add
+							//	fmul	dword ptr [eax] 
+							//	jmp		gstore_func_set
+							//gstore_func_add:
+								test	ebx, FST_ADD
+								jz		gstore_func_set
+								fadd	dword ptr [eax] 
+							gstore_func_set:
+								fstp	dword ptr [eax]
+							gstore_func_done:
+								pop		ebx
+								pop		eax
 							}
+							mdest += sizeof(InstrumentWorkspace)/4;
+						}
+						// remove signal on pop flag
+						if (storetype & FST_POP)
+						{
+							_asm  fstp	st(0);
 						}
 					}
 				}
-				left = gwork->outl;
-				right = gwork->outr;
+				// just call synth core func
+				else
+				{
+					if (val[0])
+					{
+						__asm
+						{
+							pushad
+							xor		eax, eax
+							mov		esi, val
+							lodsb
+							mov		eax, dword ptr [SynthFuncs+eax*4]
+							mov		ebx, gnote
+							mov		ecx, lwrk
+							mov		ebp, wrk
+							call	eax						
+							popad
+						}
+					}
+				}
 			}
+			left = gwork->outl;
+			right = gwork->outr;
+		}
 
-			// clip 
-			if (left < -1.0f)
-				left = -1.0f;
-			if (left > 1.0f)
-				left = 1.0f;
-			if (right < -1.0f)
-				right = -1.0f;
-			if (right > 1.0f)
-				right = 1.0f;
+		// clip 
+		if (left < -1.0f)
+			left = -1.0f;
+		if (left > 1.0f)
+			left = 1.0f;
+		if (right < -1.0f)
+			right = -1.0f;
+		if (right > 1.0f)
+			right = 1.0f;
 
-			*(oleft++) = left;
-			*(oright++) = right;
+		*(oleft++) = left;
+		*(oright++) = right;
 
-			s++;
-		} // end sample loop	
-	}
+		s++;
+	} // end sample loop	
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -877,9 +908,10 @@ void Go4kVSTi_Tick(float *oleft, float *oright, int samples)
 ////////////////////////////////////////////////////////////////////////////
 
 // prepare for recording the midi stream
-void Go4kVSTi_Record(bool record, int patternsize, float patternquant)
+void Go4kVSTi_Record(bool record, bool recordingNoise, int patternsize, float patternquant)
 {
 	Recording = record;
+	RecordingNoise = recordingNoise;
 	// if we started recording, clear all record streams
 	if (Recording)
 	{
@@ -957,35 +989,37 @@ void Go4kVSTi_AddVoice(int channel, int note)
 			InstrumentRecord[channel][CurrentTick] = note;
 			InstrumentOn[channel] = CurrentTick;
 		}
+
+		// no signals to synth when using recording noise
+		if (RecordingNoise == true)
+			return;
 	}
-	else
+
+	InstrumentWorkspaceP work,work2;
+	work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+0]);
+	work->release = 1;
+	work2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+1]);
+	work2->release = 1;
+	// filp worspace
+	if (SynthObj.Polyphony > 1)
 	{
-		InstrumentWorkspaceP work,work2;
-		work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+0]);
-		work->release = 1;
-		work2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+1]);
-		work2->release = 1;
-		// filp worspace
-		if (SynthObj.Polyphony > 1)
-		{
-			work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+SynthObj.VoiceIndex[channel]]);
-			SynthObj.VoiceIndex[channel] = SynthObj.VoiceIndex[channel] ^ 0x1;
-		}
-		// add new note
-		memset(work, 0, (2+MAX_UNITS*MAX_UNIT_SLOTS)*4);
-		work->note = note;
-		SynthObj.SignalTrace[channel] = 1.0f;
-		// check if its a controll instrument which is played
-		SynthObj.ControlInstrument[channel] = 1;
-		for (int i = 0; i < MAX_UNITS; i++)
-		{
-			if (SynthObj.InstrumentValues[channel][i][0] == M_OUT)
-			{
-				SynthObj.ControlInstrument[channel] = 0;
-				break;
-			}
-		}
+		work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+SynthObj.VoiceIndex[channel]]);
+		SynthObj.VoiceIndex[channel] = SynthObj.VoiceIndex[channel] ^ 0x1;
 	}
+	// add new note
+	memset(work, 0, (2+MAX_UNITS*MAX_UNIT_SLOTS)*4);
+	work->note = note;
+	SynthObj.SignalTrace[channel] = 1.0f;
+	// check if its a controll instrument which is played
+	SynthObj.ControlInstrument[channel] = 1;
+	for (int i = 0; i < MAX_UNITS; i++)
+	{
+		if (SynthObj.InstrumentValues[channel][i][0] == M_OUT)
+		{
+			SynthObj.ControlInstrument[channel] = 0;
+			break;
+		}
+	}	
 }
 
 // stop a voice with given parameters in synth
@@ -1005,16 +1039,18 @@ void Go4kVSTi_StopVoice(int channel, int note)
 		}
 //		if (!InstrumentRecord[channel][CurrentTick])
 			InstrumentOn[channel] = -1;
+
+		// no signals to synth when only using recording noise
+		if (RecordingNoise == true)
+			return;
 	}
-	else
-	{
-		InstrumentWorkspaceP work,work2;
-		// release notes
-		work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+0]);
-		work->release = 1;
-		work2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+1]);
-		work2->release = 1;
-	}
+
+	InstrumentWorkspaceP work,work2;
+	// release notes
+	work = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+0]);
+	work->release = 1;
+	work2 = &(SynthObj.InstrumentWork[channel*MAX_POLYPHONY+1]);
+	work2->release = 1;
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -1527,7 +1563,7 @@ void Go4kVSTi_LoadUnit(char* filename, BYTE* slot)
 	{
 		fread(slot, 1, MAX_UNIT_SLOTS, file);
 		fclose(file);
-		if (slot[0] == M_DLL)
+		if (slot[0] == M_DLL || slot[0] == M_GLITCH)
 		{
 			Go4kVSTi_ClearDelayLines();
 			Go4kVSTi_UpdateDelayTimes();
@@ -1605,6 +1641,8 @@ struct SynthUses
 
 	bool fld_use;
 	bool fld_vm;
+	
+	bool glitch_use;
 };
 
 void GetUses(SynthUses *uses, bool InstrumentUsed[])
@@ -1667,6 +1705,10 @@ void GetUses(SynthUses *uses, bool InstrumentUsed[])
 			{				
 				uses->fld_use = true;
 			}
+			if (v[0] == M_GLITCH)
+			{				
+				uses->glitch_use = true;
+			}			
 			if (v[0] == M_FST)
 			{
 				if ((((FST_valP)v)->dest_stack != -1) && (((FST_valP)v)->dest_stack != i))
@@ -1784,6 +1826,11 @@ void GetUses(SynthUses *uses, bool InstrumentUsed[])
 					if (slot == 0)
 						uses->fld_vm = true;
 				}
+				// if (v2[0] == M_GLITCH)
+				// {
+					// if (slot == 0)
+						// uses->glitch_am = true;
+				// }
 			}
 		}
 	}
@@ -2045,6 +2092,31 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 							hasReverb = true;
 						}
 					}
+					if (v->id == M_GLITCH)						
+					{
+						DWORD times = (&go4k_delay_times)[delay_indices.size()];
+						// check if indexed value already existed
+						int found = -1;
+						for (int j = 17; j < delay_times.size(); j++)
+						{
+							if (delay_times[j] == times)
+							{
+								found = j;
+								break;
+							}
+						}
+						if (found != -1)
+						{
+							// already in list, so let index point to that one
+							delay_indices.push_back(found);
+						}
+						else
+						{
+							// new value, so push it
+							delay_times.push_back(times);
+							delay_indices.push_back(delay_times.size()-1);
+						}
+					}
 				}
 				// no used instrument
 				else
@@ -2062,6 +2134,11 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 								delay_indices.push_back(-1);
 							}
 						}
+					}
+					if (v->id == M_GLITCH)
+					{
+						// just push a dummy index
+						delay_indices.push_back(-1);
 					}
 				}
 			}
@@ -2174,6 +2251,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define 	GO4K_USE_FSTG\n");
 	if (uses.fld_use)
 		fprintf(file, "%%define 	GO4K_USE_FLD\n");
+	if (uses.glitch_use)
+		fprintf(file, "%%define 	GO4K_USE_GLITCH\n");
 		fprintf(file, "%%define 	GO4K_USE_ENV_CHECK\n");
 	if (uses.env_gm)
 		fprintf(file, "%%define 	GO4K_USE_ENV_MOD_GM\n");
@@ -2255,8 +2334,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "%%define 	GO4K_USE_DLL_MOD_AM\n");
 
 		fprintf(file, "%%define	MAX_DELAY			65536\n");
-		fprintf(file, "%%define MAX_UNITS			48\n");
-		fprintf(file, "%%define	MAX_UNIT_SLOTS	    9\n");
+		fprintf(file, "%%define MAX_UNITS			64\n");
+		fprintf(file, "%%define	MAX_UNIT_SLOTS	    16\n");
 		fprintf(file, "%%define GO4K_BEGIN_CMDDEF(def_name)\n");
 		fprintf(file, "%%define GO4K_END_CMDDEF db 0\n");
 		fprintf(file, "%%define GO4K_BEGIN_PARAMDEF(def_name)\n");
@@ -2598,9 +2677,48 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "	.size\n");
 		fprintf(file, "endstruc\n");
 		fprintf(file, "%%endif\n");
+		
+		fprintf(file, "%%ifdef GO4K_USE_GLITCH\n");
+		fprintf(file, "GO4K_GLITCH_ID		equ		12\n");
+		fprintf(file, "%%macro	GO4K_GLITCH 5\n");
+		fprintf(file, "	db	%%1\n");
+		fprintf(file, "	db	%%2\n");
+		fprintf(file, "	db	%%3\n");
+		fprintf(file, "	db	%%4\n");
+		fprintf(file, "	db	%%5\n");
+		fprintf(file, "%%endmacro\n");
+		fprintf(file, "%%define	ACTIVE(val)		val\n");
+		fprintf(file, "%%define	SLICEFACTOR(val)val\n");
+		fprintf(file, "%%define	PITCHFACTOR(val)val\n");
+		fprintf(file, "%%define	SLICESIZE(val)	val\n");
+		fprintf(file, "struc	go4kGLITCH_val\n");
+		fprintf(file, "	.active		resd	1\n");
+		fprintf(file, "	.dry		resd	1\n");
+		fprintf(file, "	.dsize		resd	1\n");
+		fprintf(file, "	.dpitch		resd	1\n");
+		fprintf(file, "	.slicesize	resd	1\n");
+		fprintf(file, "	.size\n");
+		fprintf(file, "endstruc\n");
+		fprintf(file, "struc	go4kGLITCH_wrk\n");
+		fprintf(file, "	.index		resd	1\n");
+		fprintf(file, "	.store		resd	1\n");
+		fprintf(file, "	.slizesize	resd	1\n");
+		fprintf(file, "	.slicepitch	resd	1\n");
+		fprintf(file, "	.unused		resd	1\n");
+		fprintf(file, "	.buffer		resd	MAX_DELAY\n");
+		fprintf(file, "	.size\n");
+		fprintf(file, "endstruc\n");
+		fprintf(file, "struc	go4kGLITCH_wrk2\n");
+		fprintf(file, "	.am			resd	1\n");
+		fprintf(file, "	.dm			resd	1\n");
+		fprintf(file, "	.sm			resd	1\n");
+		fprintf(file, "	.pm			resd	1\n");
+		fprintf(file, "	.size\n");
+		fprintf(file, "endstruc\n");
+		fprintf(file, "%%endif\n");
 
 		fprintf(file, "%%ifdef GO4K_USE_FSTG\n");
-		fprintf(file, "GO4K_FSTG_ID	equ		12\n");
+		fprintf(file, "GO4K_FSTG_ID	equ		13\n");
 		fprintf(file, "%%macro	GO4K_FSTG 2\n");
 		fprintf(file, "	db	%%1\n");
 		fprintf(file, "	dw	%%2\n");
@@ -2751,6 +2869,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 					sprintf(comstr, "\tdb GO4K_ACC_ID\n"); 
 				if (SynthObj.InstrumentValues[i][u][0] == M_FLD)
 					sprintf(comstr, "\tdb GO4K_FLD_ID\n"); 
+				if (SynthObj.InstrumentValues[i][u][0] == M_GLITCH)
+					sprintf(comstr, "\tdb GO4K_GLITCH_ID\n"); 
 
 				CommandString += comstr;
 			}			
@@ -2791,6 +2911,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 				fprintf(file, "\tdb GO4K_ACC_ID\n");
 			if (SynthObj.GlobalValues[u][0] == M_FLD)
 				fprintf(file, "\tdb GO4K_FLD_ID\n");
+			if (SynthObj.GlobalValues[u][0] == M_GLITCH)
+				fprintf(file, "\tdb GO4K_GLITCH_ID\n");
 		}
 		fprintf(file, "GO4K_END_CMDDEF\n");
 		fprintf(file, "go4k_synth_instructions_end\n");
@@ -3001,6 +3123,21 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 					FLD_valP v = (FLD_valP)(SynthObj.InstrumentValues[i][u]);
 					sprintf(valstr, "\tGO4K_FLD\tVALUE(%d)\n", v->value);
 				}
+				if (SynthObj.InstrumentValues[i][u][0] == M_GLITCH)
+				{
+					GLITCH_valP v = (GLITCH_valP)(SynthObj.InstrumentValues[i][u]);
+					if (v->delay < delay_indices.size())
+					{
+						sprintf(valstr, "\tGO4K_GLITCH\tACTIVE(%d),DRY(%d),SLICEFACTOR(%d),PITCHFACTOR(%d),SLICESIZE(%d)\n", 
+							v->active, v->dry, v->dsize, v->dpitch, delay_indices[v->delay]);	
+					}
+					// error handling in case indices are fucked up
+					else
+					{
+						sprintf(valstr, "\tGO4K_GLITCH\tACTIVE(%d),DRY(%d),SLICEFACTOR(%d),PITCHFACTOR(%d),SLICESIZE(%d) ; ERROR\n",
+							v->active, v->dry, v->dsize, v->dpitch, v->delay);	
+					}
+				}
 
 				ValueString += valstr;
 			}
@@ -3130,7 +3267,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						//	modes = "FST_MUL";
 						if (v->type & FST_POP)
 							modes += "+FST_POP";
-						fprintf(file, "\tGO4K_FST\tAMOUNT(%d),DEST(%d*MAX_UNIT_SLOTS+%d+%s)\n", v->amount, v->dest_unit-emptySkip, v->dest_slot, modes );
+						fprintf(file, "\tGO4K_FST\tAMOUNT(%d),DEST(%d*MAX_UNIT_SLOTS+%d+%s)\n", v->amount, v->dest_unit-emptySkip, v->dest_slot, modes.c_str());
 					}
 					// global storage
 					else
@@ -3184,6 +3321,21 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 				{
 					FLD_valP v = (FLD_valP)(SynthObj.GlobalValues[u]);
 					fprintf(file, "\tGO4K_FLD\tVALUE(%d)\n", v->value);
+				}
+				if (SynthObj.GlobalValues[u][0] == M_GLITCH)
+				{
+					GLITCH_valP v = (GLITCH_valP)(SynthObj.GlobalValues[u]);
+					if (v->delay < delay_indices.size())
+					{
+						fprintf(file, "\tGO4K_GLITCH\tACTIVE(%d),DRY(%d),SLICEFACTOR(%d),PITCHFACTOR(%d),SLICESIZE(%d)\n",
+							v->active, v->dry, v->dsize, v->dpitch, delay_indices[v->delay]);	
+					}
+					// error handling in case indices are fucked up
+					else
+					{
+						fprintf(file, "\tGO4K_GLITCH\tACTIVE(%d),DRY(%d),SLICEFACTOR(%d),PITCHFACTOR(%d),SLICESIZE(%d) ; ERROR\n",
+							v->active, v->dry, v->dsize, v->dpitch, v->delay);	
+					}
 				}
 			}
 			fprintf(file, "GO4K_END_PARAMDEF\n");

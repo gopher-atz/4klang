@@ -7,7 +7,8 @@
 //
 // Generated from the TEXTINCLUDE 2 resource.
 //
-#include "afxres.h"
+#include "WinResrc.h"
+#define IDC_STATIC -1
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -35,7 +36,7 @@ IDR_ASM_RES             BINARY                  "4klang.bin"
 IDD_GO4KVSTIDIALOG DIALOGEX 0, 0, 594, 341
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_ACCEPTFILES
-CAPTION "Alcatraz - 8klang Synth Plugin (4klang addon) - Version 3.11"
+CAPTION "Alcatraz - 8klang Synth Plugin (4klang addon) - Version 3.2.1"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     PUSHBUTTON      "Load Patch Data",IDC_LOAD_PATCH,13,13,70,14
@@ -96,6 +97,8 @@ BEGIN
     COMBOBOX        IDC_OBJFORMAT,515,51,66,72,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Link To",IDC_STATIC,241,47,23,8
     COMBOBOX        IDC_INSTRUMENTLINK,301,44,85,184,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Stayalive Noise while Recording",IDC_RECORDBUSYSIGNAL,
+                    "Button",BS_AUTOCHECKBOX | BS_MULTILINE | WS_TABSTOP,431,267,64,21
 END
 
 IDD_VCO DIALOGEX 0, 0, 300, 170
@@ -1265,6 +1268,28 @@ FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
 END
 
+IDD_GLITCH DIALOGEX 0, 0, 300, 170
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Glitch",IDC_STATIC,0,0,300,170
+    CONTROL         "",IDC_GLITCH_DRY,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,38,65,200,15
+    CONTROL         "",IDC_GLITCH_ACTIVE,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,38,49,200,15
+    LTEXT           "Active",IDC_STATIC,4,53,21,8
+    LTEXT           "Dry",IDC_STATIC,4,68,12,8
+    CTEXT           " ",IDC_GLITCH_ACTIVE_VAL,242,50,48,12,SS_SUNKEN
+    CTEXT           " ",IDC_GLITCH_DRY_VAL,242,66,48,12,SS_SUNKEN
+    CONTROL         "",IDC_GLITCH_DSIZE,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,38,97,200,15
+    LTEXT           "DSize",IDC_STATIC,4,100,18,8
+    CTEXT           " ",IDC_GLITCH_DSIZE_VAL,242,97,48,12,SS_SUNKEN
+    CONTROL         "",IDC_GLITCH_DPITCH,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,38,113,200,15
+    LTEXT           "DPitch",IDC_STATIC,4,117,21,8
+    CTEXT           " ",IDC_GLITCH_DPITCH_VAL,242,113,48,12,SS_SUNKEN
+    CONTROL         "",IDC_GLITCH_DTIME,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,38,81,200,15
+    LTEXT           "Delay",IDC_STATIC,4,85,19,8
+    CTEXT           " ",IDC_GLITCH_DTIME_VAL,242,81,48,12,SS_SUNKEN
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -1290,6 +1315,10 @@ BEGIN
     BEGIN
     END
 
+    IDD_DLL, DIALOG
+    BEGIN
+    END
+
     IDD_DST, DIALOG
     BEGIN
     END
@@ -1304,6 +1333,10 @@ BEGIN
         RIGHTMARGIN, 179
         TOPMARGIN, 7
         BOTTOMMARGIN, 35
+    END
+
+    IDD_GLITCH, DIALOG
+    BEGIN
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -1332,6 +1365,17 @@ BEGIN
 0x3233, 0x7265, 0x5020, 0x7461, 0x6574, 0x6e72, "\000" 
     IDC_PATTERN_QUANT, 0x403, 13, 0
 0x3436, 0x7265, 0x5020, 0x7461, 0x6574, 0x6e72, "\000" 
+    0
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_GO4KVSTIDIALOG AFX_DIALOG_LAYOUT
+BEGIN
     0
 END
 

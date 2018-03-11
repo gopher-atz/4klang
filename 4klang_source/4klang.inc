@@ -38,6 +38,7 @@
 %define		GO4K_USE_GLOBAL_DLL				; // removing this will	skip global	dll	processing
 %define		GO4K_USE_FSTG					; // removing this will	skip global	store unit
 %define		GO4K_USE_FLD					; // removing this will	skip float load unit
+%define		GO4K_USE_GLITCH					; // removing this will	skip GLITCH unit
 %define		GO4K_USE_ENV_CHECK				; // removing this skips checks	if processing is needed
 %define		GO4K_USE_ENV_MOD_GM				; // removing this will	skip env gain modulation code
 %define		GO4K_USE_ENV_MOD_ADR			; // removing this will skip env attack/decay/release modulation code
@@ -475,11 +476,56 @@ struc	go4kFLD_wrk
 	.size
 endstruc
 %endif
+%ifdef GO4K_USE_GLITCH
+; //----------------------------------------------------------------------------------------
+; // GLITCH structs
+; //----------------------------------------------------------------------------------------
+GO4K_GLITCH_ID		equ		12
+%macro	GO4K_GLITCH 5
+	db	%1
+	db	%2
+	db	%3
+	db	%4
+	db	%5
+%endmacro
+%define	ACTIVE(val)		val
+%define	SLICEFACTOR(val)val
+%define	PITCHFACTOR(val)val
+%define	SLICESIZE(val)	val
+struc	go4kGLITCH_val
+;//	unit paramters
+	.active		resd	1
+	.dry		resd	1
+	.dsize		resd	1
+	.dpitch		resd	1
+	.slicesize	resd	1
+	.size
+endstruc
+struc	go4kGLITCH_wrk
+;//	work variables
+	.index		resd	1
+	.store		resd	1
+	.slizesize	resd	1
+	.slicepitch	resd	1
+	.unused		resd	1
+;// the delay buffer	
+	.buffer		resd	MAX_DELAY
+	.size
+endstruc
+struc	go4kGLITCH_wrk2
+;//	modulation targets
+	.am			resd	1
+	.dm			resd	1
+	.sm			resd	1
+	.pm			resd	1
+	.size
+endstruc
+%endif
 %ifdef GO4K_USE_FSTG
 ; //----------------------------------------------------------------------------------------
 ; // FSTG structs
 ; //----------------------------------------------------------------------------------------
-GO4K_FSTG_ID	equ		12
+GO4K_FSTG_ID	equ		13
 %macro	GO4K_FSTG 2
 	db	%1
 	dw	%2

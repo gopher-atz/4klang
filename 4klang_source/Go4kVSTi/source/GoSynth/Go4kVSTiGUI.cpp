@@ -52,7 +52,8 @@ static char* UnitName[NUM_MODULES] =
 	"Panning",
 	"Output",
 	"Accumulate",
-	"Load"
+	"Load",
+	"Glitch"
 };
 
 // minimal signal precondition for each unit
@@ -70,6 +71,7 @@ static int UnitPreSignals[NUM_MODULES] =
 	2,	// out
 	0,	// acc
 	0,  // fld
+	1,  // glitch
 };
 
 // signal post condition (relative to precondition)
@@ -86,7 +88,8 @@ static int UnitPostSignals[NUM_MODULES] =
 	1,	// pan
 	-2,	// out
 	2,	// acc
-	1	// fld
+	1,	// fld
+	0	// glitch
 };
 
 static char* UnitModulationTargetNames[][8] = 
@@ -103,6 +106,7 @@ static char* UnitModulationTargetNames[][8] =
 	{ "AUX", "Gain", "", "", "", "", "", "" },
 	{ "", "", "", "", "", "", "", "" },
 	{ "Value", "", "", "", "", "", "", "" },
+	{ "Active", "Dry", "Delta Size", "Delta Pitch", "", "", "", "" },
 };
 
 static char* UnitModulationTargetShortNames[][8] = 
@@ -119,6 +123,7 @@ static char* UnitModulationTargetShortNames[][8] =
 	{ "AUX", "Gain", "", "", "", "", "", "" },
 	{ "", "", "", "", "", "", "", "" },
 	{ "Value", "", "", "", "", "", "", "" },
+	{ "Active", "Dry", "DSize", "DPitch", "", "", "", "" },
 };
 
 static char* delayName[33] = 
@@ -288,6 +293,11 @@ char* GetUnitString(BYTE* unit, char* unitname)
 		FLD_valP val = (FLD_valP)unit;
 		sprintf(UnitDesc, "    (%d)", val->value-64);
 	}
+	if (unit[0] == M_GLITCH)
+	{
+		GLITCH_valP val = (GLITCH_valP)unit;
+		sprintf(UnitDesc, "    (%s)","Glitch");
+	}
 
 	sprintf(unitname, "%s%s", UnitName[unit[0]], UnitDesc);
 	return unitname;
@@ -321,6 +331,18 @@ void UpdateDelayTimes(DLL_valP unit)
 		sprintf(SliderValTxt, "%s", text);
 		SetWindowText(GetDlgItem(ModuleWnd[M_DLL], IDC_DLL_DTIME_VAL), SliderValTxt);
 	}
+}
+
+void UpdateDelayTimes(GLITCH_valP unit)
+{	
+	Go4kVSTi_UpdateDelayTimes();
+
+	int delay;
+	char text[10];
+	GLITCH_valP v = (GLITCH_valP)unit;
+	sprintf(text, "%s", delayName[v->guidelay>>2]);
+	sprintf(SliderValTxt, "%s", text);
+	SetWindowText(GetDlgItem(ModuleWnd[M_GLITCH], IDC_GLITCH_DTIME_VAL), SliderValTxt);
 }
 
 // CB for the main DLG
@@ -370,6 +392,7 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 			SendDlgItemMessage(hwndDlg, IDC_POLYPHONY, CB_SETCURSEL, (WPARAM)1, (LPARAM)0);
 
 			SendDlgItemMessage(hwndDlg, IDC_CLIPOUTPUT, BM_SETCHECK, 1, 0);
+			SendDlgItemMessage(hwndDlg, IDC_RECORDBUSYSIGNAL, BM_SETCHECK, 1, 0);
 
 			return TRUE;
 		}
@@ -429,6 +452,22 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 									ds->synctype != dl->synctype ||
 									ds->leftreverb != dl->leftreverb ||
 									ds->reverb != dl->reverb)
+								{
+									MessageBox(DialogWnd, "Instruments cannot be linked as they differ!", "Info", MB_OK);
+									SendDlgItemMessage(hwndDlg, IDC_INSTRUMENTLINK, CB_SETCURSEL, (WPARAM)16, (LPARAM)0);
+									return TRUE;
+								}
+							}
+							else if (SynthObjP->InstrumentValues[SelectedInstrument][u][0] == M_GLITCH)
+							{
+								GLITCH_valP ds = (GLITCH_valP)SynthObjP->InstrumentValues[SelectedInstrument][u];
+								GLITCH_valP dl = (GLITCH_valP)SynthObjP->InstrumentValues[linkToInstrument][u];
+								if (ds->active != dl->active ||
+									ds->dry != dl->dry ||
+									ds->dsize != dl->dsize ||
+									ds->dpitch != dl->dpitch ||
+									ds->guidelay != dl->guidelay
+									)
 								{
 									MessageBox(DialogWnd, "Instruments cannot be linked as they differ!", "Info", MB_OK);
 									SendDlgItemMessage(hwndDlg, IDC_INSTRUMENTLINK, CB_SETCURSEL, (WPARAM)16, (LPARAM)0);
@@ -567,8 +606,69 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 							//instrument check
 							for (int i = 0; i < MAX_INSTRUMENTS; i++)
 							{
-								UpdateSignalCount(i);
+								UpdateSignalCount(i);							
 								LinkToInstrument[i] = 16;
+								// try setting up instrument links
+								if (i > 0)
+								{
+									for (int j = 0; j < i; j++)
+									{
+										int linkToInstrument = j;
+										// compare instruments
+										for (int u = 0; u < MAX_UNITS; u++)
+										{
+											// special case, compare manually
+											if (SynthObjP->InstrumentValues[i][u][0] == M_DLL)
+											{
+												DLL_valP ds = (DLL_valP)SynthObjP->InstrumentValues[i][u];
+												DLL_valP dl = (DLL_valP)SynthObjP->InstrumentValues[j][u];
+												if (ds->pregain != dl->pregain ||
+													ds->dry != dl->dry ||
+													ds->feedback != dl->feedback ||
+													ds->damp != dl->damp ||
+													ds->freq != dl->freq ||
+													ds->depth != dl->depth ||
+													ds->guidelay != dl->guidelay ||
+													ds->synctype != dl->synctype ||
+													ds->leftreverb != dl->leftreverb ||
+													ds->reverb != dl->reverb)
+												{
+													linkToInstrument = 16;
+													break;
+												}
+											}
+											else if (SynthObjP->InstrumentValues[i][u][0] == M_GLITCH)
+											{
+												GLITCH_valP ds = (GLITCH_valP)SynthObjP->InstrumentValues[i][u];
+												GLITCH_valP dl = (GLITCH_valP)SynthObjP->InstrumentValues[j][u];
+												if (ds->active != dl->active ||
+													ds->dry != dl->dry ||
+													ds->dsize != dl->dsize ||
+													ds->dpitch != dl->dpitch ||
+													ds->guidelay != dl->guidelay
+													)
+												{
+													linkToInstrument = 16;
+													break;
+												}
+											}
+											else
+											{
+												if (memcmp(SynthObjP->InstrumentValues[i][u], SynthObjP->InstrumentValues[j][u], MAX_UNIT_SLOTS))
+												{
+													linkToInstrument = 16;
+													break;
+												}
+											}										
+										}
+										// set link
+										if (linkToInstrument != 16)
+										{
+											LinkToInstrument[i] = linkToInstrument;
+											break;
+										}
+									}
+								}
 							}
 							UpdateControls(SelectedInstrument);
 						}
@@ -910,14 +1010,17 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 							patternquant = 4.0;
 						if (pquant == 5)
 							patternquant = 8.0;
-						Go4kVSTi_Record(true, patternsize, patternquant);
+
+						bool recordingNoise = SendDlgItemMessage(hwndDlg, IDC_RECORDBUSYSIGNAL, BM_GETCHECK, 0, 0) == BST_CHECKED;
+
+						Go4kVSTi_Record(true, recordingNoise, patternsize, patternquant);
 						return TRUE;
 					}
 					case IDC_STOP_BUTTON:
 					{
 						EnableWindow(GetDlgItem(DialogWnd, IDC_RECORD_BUTTON), true);
 						EnableWindow(GetDlgItem(DialogWnd, IDC_STOP_BUTTON), false);
-						Go4kVSTi_Record(false, 0, 0);
+						Go4kVSTi_Record(false, false, 0, 0);
 						return TRUE;
 					}
 					case IDC_PANIC:
@@ -1034,6 +1137,67 @@ BOOL CALLBACK MainDialogProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM l
 					{
 						UpdateSignalCount(i);
 						LinkToInstrument[i] = 16;
+						// try setting up instrument links
+						if (i > 0)
+						{
+							for (int j = 0; j < i; j++)
+							{
+								int linkToInstrument = j;
+								// compare instruments
+								for (int u = 0; u < MAX_UNITS; u++)
+								{
+									// special case, compare manually
+									if (SynthObjP->InstrumentValues[i][u][0] == M_DLL)
+									{
+										DLL_valP ds = (DLL_valP)SynthObjP->InstrumentValues[i][u];
+										DLL_valP dl = (DLL_valP)SynthObjP->InstrumentValues[j][u];
+										if (ds->pregain != dl->pregain ||
+											ds->dry != dl->dry ||
+											ds->feedback != dl->feedback ||
+											ds->damp != dl->damp ||
+											ds->freq != dl->freq ||
+											ds->depth != dl->depth ||
+											ds->guidelay != dl->guidelay ||
+											ds->synctype != dl->synctype ||
+											ds->leftreverb != dl->leftreverb ||
+											ds->reverb != dl->reverb)
+										{
+											linkToInstrument = 16;
+											break;
+										}										
+									}
+									else if (SynthObjP->InstrumentValues[i][u][0] == M_GLITCH)
+									{
+										GLITCH_valP ds = (GLITCH_valP)SynthObjP->InstrumentValues[i][u];
+										GLITCH_valP dl = (GLITCH_valP)SynthObjP->InstrumentValues[j][u];
+										if (ds->active != dl->active ||
+											ds->dry != dl->dry ||
+											ds->dsize != dl->dsize ||
+											ds->dpitch != dl->dpitch ||
+											ds->guidelay != dl->guidelay
+											)
+										{
+											linkToInstrument = 16;
+											break;
+										}
+									}
+									else
+									{
+										if (memcmp(SynthObjP->InstrumentValues[i][u], SynthObjP->InstrumentValues[j][u], MAX_UNIT_SLOTS))
+										{
+											linkToInstrument = 16;
+											break;
+										}
+									}										
+								}
+								// set link
+								if (linkToInstrument != 16)
+								{
+									LinkToInstrument[i] = linkToInstrument;
+									break;
+								}
+							}
+						}
 					}
 					UpdateControls(SelectedInstrument);
 				}
@@ -1409,6 +1573,17 @@ void LinkInstrumentUnit(int selectedInstrument, int selectedIUnit)
 				dl->synctype	= ds->synctype;
 				dl->leftreverb	= ds->leftreverb;
 				dl->reverb		= ds->reverb;
+			}
+			else if (SynthObjP->InstrumentValues[selectedInstrument][selectedIUnit][0] == M_GLITCH)
+			{
+				GLITCH_valP ds = (GLITCH_valP)SynthObjP->InstrumentValues[selectedInstrument][selectedIUnit];
+				GLITCH_valP dl = (GLITCH_valP)SynthObjP->InstrumentValues[i][selectedIUnit];
+				dl->id			= ds->id;
+				dl->active		= ds->active;
+				dl->dry			= ds->dry;
+				dl->dsize		= ds->dsize;
+				dl->dpitch		= ds->dpitch;
+				dl->guidelay	= ds->guidelay;
 			}
 			else
 			{
@@ -2028,6 +2203,36 @@ void SetSliderParams(int uid, BYTE* val, LPARAM lParam)
 		if ((HWND)lParam == GetDlgItem(ModuleWnd[uid], IDC_FLD_VALUE))
 		{
 			UpdateSliderValueCenter(IDC_FLD_VALUE, v->value);
+		}
+	}
+	else if (uid == M_GLITCH)
+	{
+		GLITCH_valP v = (GLITCH_valP)val;
+		// active
+		if ((HWND)lParam == GetDlgItem(ModuleWnd[uid], IDC_GLITCH_ACTIVE))
+		{
+			UpdateSliderValue(IDC_GLITCH_ACTIVE, v->active);
+		}
+		// dry
+		if ((HWND)lParam == GetDlgItem(ModuleWnd[uid], IDC_GLITCH_DRY))
+		{
+			UpdateSliderValue(IDC_GLITCH_DRY, v->dry);
+		}
+		// delta size
+		if ((HWND)lParam == GetDlgItem(ModuleWnd[uid], IDC_GLITCH_DSIZE))
+		{
+			UpdateSliderValue(IDC_GLITCH_DSIZE, v->dsize);
+		}
+		// delta pitch
+		if ((HWND)lParam == GetDlgItem(ModuleWnd[uid], IDC_GLITCH_DPITCH))
+		{
+			UpdateSliderValue(IDC_GLITCH_DPITCH, v->dpitch);
+		}
+		// delay
+		if ((HWND)lParam == GetDlgItem(ModuleWnd[uid], IDC_GLITCH_DTIME))
+		{
+			v->guidelay = SendMessage(GetDlgItem(ModuleWnd[uid], IDC_GLITCH_DTIME), TBM_GETPOS, 0, 0);
+			UpdateDelayTimes(v);
 		}
 	}
 }
@@ -3121,6 +3326,25 @@ void UpdateModule(int uid, BYTE* val)
 		FLD_valP v = (FLD_valP)val;
 		// panning
 		InitSliderCenter(ModuleWnd[uid], IDC_FLD_VALUE, 0, 128, v->value);
+	}
+	else if (uid == M_GLITCH)
+	{
+		GLITCH_valP v = (GLITCH_valP)val;
+		// active
+		InitSlider(ModuleWnd[uid], IDC_GLITCH_ACTIVE, 0, 128, v->active);
+		// dry
+		InitSlider(ModuleWnd[uid], IDC_GLITCH_DRY, 0, 128, v->dry);
+		// delta size
+		InitSlider(ModuleWnd[uid], IDC_GLITCH_DSIZE, 0, 128, v->dsize);
+		// delta pitch
+		InitSlider(ModuleWnd[uid], IDC_GLITCH_DPITCH, 0, 128, v->dpitch);
+		// delay
+		InitSliderNoGUI(ModuleWnd[uid], IDC_GLITCH_DTIME, 0, 128, v->guidelay);
+		
+		ShowWindow(GetDlgItem(ModuleWnd[M_DLL], IDC_GLITCH_DTIME), SW_SHOW);
+		ShowWindow(GetDlgItem(ModuleWnd[M_DLL], IDC_GLITCH_DTIME_VAL), SW_SHOW);
+
+		UpdateDelayTimes(v);
 	}
 }
 

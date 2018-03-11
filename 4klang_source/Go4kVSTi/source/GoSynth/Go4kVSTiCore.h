@@ -38,7 +38,7 @@ float Go4kVSTi_GetBPM();
 // activate solo mode
 void Go4kVSTi_Solo(int channel, int solo);
 // stream recording activation/deactivation
-void Go4kVSTi_Record(bool record, int patternsize, float patternquant);
+void Go4kVSTi_Record(bool record, bool recordingNoise, int patternsize, float patternquant);
 // panic
 void Go4kVSTi_Panic();
 // update dll times (e.g. sync to current bpm)
@@ -87,6 +87,7 @@ enum UnitID
 	M_OUT,
 	M_ACC,
 	M_FLD,
+	M_GLITCH,
 	NUM_MODULES
 };
 
@@ -266,6 +267,19 @@ typedef struct FLD_val
 	BYTE	value;
 // GUI STUFF
 } *FLD_valP;
+
+typedef struct GLITCH_val
+{
+	BYTE	id;
+	BYTE	active;
+	BYTE	dry;
+	BYTE	dsize;
+	BYTE	dpitch;
+	BYTE	delay;
+// GUI STUFF
+	BYTE	guidelay;
+} *GLITCH_valP;
+
 
 /////////////////////////////////////////////////////////////////////////////////////
 // workspace definitions
