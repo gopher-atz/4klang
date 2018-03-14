@@ -15,6 +15,8 @@ The repository contains the folders:
 
 The plugin project here is based on Visual Studio 2015, so that and above should compile out of the box.
 
+![4klang image](https://raw.githubusercontent.com/hzdgopher/4klang/master/4klang.png)
+
 Examples
 --------
 
