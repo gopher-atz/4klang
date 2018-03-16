@@ -1,5 +1,5 @@
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "4klang", "Go4kVSTi.vcxproj", "{107757EA-2FE1-4C5E-964F-DE7E482E253F}"
 EndProject
 Project("{D3783134-2AE6-4F36-A599-989377222068}") = "4klang2", "Go4kVSTi2.vcxproj", "{FA790F08-0B8E-43D9-A4B4-519AB01B820C}"

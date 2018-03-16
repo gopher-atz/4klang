@@ -763,9 +763,10 @@ go4kDST_func_do:
 	fst		dword [WRK+go4kDST_wrk.snhphase]
 	fldz									; //	0		snh'	in		(inr)
 	fucomip	st1								; //	snh'	in		(inr)
+	fstp    dword [esp-4]					; //	in		(inr)
 	jc		short go4kDST_func_hold			
-	fld1									; //	1		snh'	in		(inr)
-	faddp	st1, st0						; //	1+snh'	in		(inr)
+	fld1									; //	1		in		(inr)
+	fadd	dword [esp-4]					; //	1+snh'	in		(inr)
 	fstp	dword [WRK+go4kDST_wrk.snhphase]; // 	in		(inr)
 %endif	
 ; // calc pregain and postgain	
@@ -793,14 +794,13 @@ go4kDST_func_mono:
 	fst		dword [WRK+go4kDST_wrk.out]		; // 	out'	(outr)
 %endif	
 	ret										; // 	out'	(outr)
-%ifdef	GO4K_USE_DST_SH	
-go4kDST_func_hold:							; //	snh'	in		(inr)
-	fstp	st0								; // 	in		(inr)
+%ifdef	GO4K_USE_DST_SH
+go4kDST_func_hold:							; //	in		(inr)
 	fstp	st0								; // 	(inr)
 %ifdef GO4K_USE_DST_STEREO
-	fstp	st0
 	test	al, byte STEREO					
-	jz		short go4kDST_func_monohold
+	jz		short go4kDST_func_monohold		; // 	(inr)
+	fstp	st0								; // 	
 	fld		dword [WRK+go4kDST_wrk.out2]	; // 	outr
 go4kDST_func_monohold:	
 %endif	

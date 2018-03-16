@@ -14,6 +14,9 @@ The repository contains the folders:
 - 4klang_source (the VSTi source as well as the needed 4klang.asm file for compilation in your exe)
 
 The plugin project here is based on Visual Studio 2015, so that and above should compile out of the box.
+The only additional thing you need for compilation is YASM/vsyasm, so download and follow the instructions here to get it running:
+
+https://github.com/ShiftMediaProject/VSYASM
 
 Examples
 --------
