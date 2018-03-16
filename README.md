@@ -18,6 +18,8 @@ The only additional thing you need for compilation is YASM/vsyasm, so download a
 
 https://github.com/ShiftMediaProject/VSYASM
 
+![4klang image](https://raw.githubusercontent.com/hzdgopher/4klang/master/4klang.png)
+
 Examples
 --------
 
