@@ -36,7 +36,7 @@ IDR_ASM_RES             BINARY                  "4klang.bin"
 IDD_GO4KVSTIDIALOG DIALOGEX 0, 0, 594, 341
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_ACCEPTFILES
-CAPTION "Alcatraz - 8klang Synth Plugin (4klang addon) - Version 3.2.1"
+CAPTION "Alcatraz - 8klang Synth Plugin (4klang addon) - Version 3.2.2"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     PUSHBUTTON      "Load Patch Data",IDC_LOAD_PATCH,13,13,70,14

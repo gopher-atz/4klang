@@ -488,6 +488,7 @@ void Go4kVSTi_UpdateDelayTimes()
 					int delay;
 					if (v->synctype == 2)
 					{
+						(&go4k_delay_times)[delayindex] = 0; // added for debug. doesnt hurt though
 						v->delay = 0;
 						v->count = 1;
 					}
@@ -1439,7 +1440,9 @@ void Go4kVSTi_LoadInstrument(char* filename, char channel)
 		else
 		{
 			Go4kVSTi_ResetGlobal();
-			fread(SynthObj.InstrumentNames[channel], 1, 64, file);
+			// read the instrument name in a dummy buffer, as global section doesnt have an own name
+			BYTE dummyNameBuf[64];
+			fread(dummyNameBuf, 1, 64, file);
 			if (version13)
 			{
 				BYTE dummyBuf[16];
@@ -1548,7 +1551,8 @@ void Go4kVSTi_SaveInstrument(char* filename, char channel)
 		}
 		else
 		{
-			fwrite(SynthObj.InstrumentNames[channel], 1, 64, file);
+			// write a dummy name for global section as it doesnt have an own name
+			fwrite("GlobalUnitsStoredAs.4ki                                         ", 1, 64, file);
 			fwrite(SynthObj.GlobalValues, 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		}
 		fclose(file);
@@ -2127,12 +2131,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 					{
 						if (!v->reverb)
 						{
-							// if not notesync
-							if (v->synctype != 2)
-							{
-								// just push a dummy index
-								delay_indices.push_back(-1);
-							}
+							// just push a dummy index
+							delay_indices.push_back(-1);
 						}
 					}
 					if (v->id == M_GLITCH)
