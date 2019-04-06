@@ -748,27 +748,28 @@ go4kDST_func_do:
 %endif
 	movzx	eax, byte [VAL-1]				; // get type flag
 %ifdef	GO4K_USE_DST_SH
-	fld		dword [edx+go4kDST_val.snhfreq]	; //	snh		in
+	fld		dword [edx+go4kDST_val.snhfreq]	; //	snh		in		(inr)
 %ifdef 	GO4K_USE_DST_MOD_SH	
-	fadd	dword [WRK+go4kDST_wrk.sm]		; // 	snh'	in
+	fadd	dword [WRK+go4kDST_wrk.sm]		; // 	snh'	in		(inr)
 %endif
 	fmul	st0, st0						; // square the input so we never get negative and also have a smoother behaviour in the lower frequencies
 	fchs
-	fadd	dword [WRK+go4kDST_wrk.snhphase]; // 	snh'	in
+	fadd	dword [WRK+go4kDST_wrk.snhphase]; // 	snh'	in		(inr)
 	fst		dword [WRK+go4kDST_wrk.snhphase]
-	fldz									; //	0		snh'	in
-	fucomip	st1								; //	0		snh'	in
+	fldz									; //	0		snh'	in		(inr)
+	fucomip	st1								; //	snh'	in		(inr)
+	fstp    dword [esp-4]					; //	in		(inr)
 	jc		short go4kDST_func_hold			
-	fld1									; //	1		snh'	in
-	faddp	st1, st0						; //	1+snh'	in
-	fstp	dword [WRK+go4kDST_wrk.snhphase]; // 	in
+	fld1									; //	1		in		(inr)
+	fadd	dword [esp-4]					; //	1+snh'	in		(inr)
+	fstp	dword [WRK+go4kDST_wrk.snhphase]; // 	in		(inr)
 %endif	
 ; // calc pregain and postgain	
 %ifdef GO4K_USE_DST_STEREO
-	test	al, byte STEREO					; // outr	inl
+	test	al, byte STEREO					
 	jz		short go4kDST_func_mono
 	fxch	st1								; // 	inr		inl
-	fld		dword [edx+go4kDST_val.drive]	; // 	drive		inr		inl
+	fld		dword [edx+go4kDST_val.drive]	; // 	drive	inr		inl
 %ifdef GO4K_USE_DST_MOD_DM	
 	fadd	dword [WRK+go4kDST_wrk.dm]
 %endif
@@ -779,26 +780,26 @@ go4kDST_func_do:
 	fxch	st1								; // 	inl		outr
 go4kDST_func_mono:	
 %endif	
-	fld		dword [edx+go4kDST_val.drive]	; // 	drive		in
+	fld		dword [edx+go4kDST_val.drive]	; // 	drive	in		(outr)
 %ifdef GO4K_USE_DST_MOD_DM	
 	fadd	dword [WRK+go4kDST_wrk.dm]
 %endif
-	call	go4kWaveshaper					; // out
+	call	go4kWaveshaper					; // 	out		(outr)
 %ifdef	GO4K_USE_DST_SH		
-	fst		dword [WRK+go4kDST_wrk.out]		; // out'
+	fst		dword [WRK+go4kDST_wrk.out]		; // 	out'	(outr)
 %endif	
-	ret										; // out'
-%ifdef	GO4K_USE_DST_SH	
-go4kDST_func_hold:	
-	fstp	st0								; // in
-	fstp	st0
+	ret										; // 	out'	(outr)
+%ifdef	GO4K_USE_DST_SH
+go4kDST_func_hold:							; //	in		(inr)
+	fstp	st0								; // 	(inr)
 %ifdef GO4K_USE_DST_STEREO
-	test	al, byte STEREO					; // outr	inl
-	jz		short go4kDST_func_monohold
-	fld		dword [WRK+go4kDST_wrk.out2]	; // out2
+	test	al, byte STEREO					
+	jz		short go4kDST_func_monohold		; // 	(inr)
+	fstp	st0								; // 	
+	fld		dword [WRK+go4kDST_wrk.out2]	; // 	outr
 go4kDST_func_monohold:	
 %endif	
-	fld		dword [WRK+go4kDST_wrk.out]		; // out
+	fld		dword [WRK+go4kDST_wrk.out]		; // 	out		(outr)
 	ret
 %endif	
 

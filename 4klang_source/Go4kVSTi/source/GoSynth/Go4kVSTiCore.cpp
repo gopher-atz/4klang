@@ -457,7 +457,7 @@ void Go4kVSTi_UpdateDelayTimes()
 
 			if (v->id == M_DLL)
 			{
-				DLL_valP v = (DLL_valP)(SynthObj.InstrumentValues[i][u]);
+				//DLL_valP v = (DLL_valP)(SynthObj.InstrumentValues[i][u]);
 				if (v->reverb)
 				{
 					if (v->leftreverb)
@@ -476,6 +476,7 @@ void Go4kVSTi_UpdateDelayTimes()
 					int delay;
 					if (v->synctype == 2)
 					{
+						(&go4k_delay_times)[delayindex] = 0; // added for debug. doesnt hurt though
 						v->delay = 0;
 						v->count = 1;
 					}
@@ -549,7 +550,7 @@ void Go4kVSTi_Tick(float *oleft, float *oright, int samples)
 		// send a stayalive signal to the host
 		for (int i = 0; i < samples; i++)
 		{
-			float signal = 0.0625*((float)(i&63)/32.0f - 1.0f);
+			float signal = 0.03125*((float)(i & 255) / 128.0f - 1.0f);
 			*oleft++ = signal;
 			*oright++ = signal;
 		}
@@ -1403,7 +1404,9 @@ void Go4kVSTi_LoadInstrument(char* filename, char channel)
 		else
 		{
 			Go4kVSTi_ResetGlobal();
-			fread(SynthObj.InstrumentNames[channel], 1, 64, file);
+			// read the instrument name in a dummy buffer, as global section doesnt have an own name
+			BYTE dummyNameBuf[64];
+			fread(dummyNameBuf, 1, 64, file);
 			if (version13)
 			{
 				BYTE dummyBuf[16];
@@ -1512,7 +1515,8 @@ void Go4kVSTi_SaveInstrument(char* filename, char channel)
 		}
 		else
 		{
-			fwrite(SynthObj.InstrumentNames[channel], 1, 64, file);
+			// write a dummy name for global section as it doesnt have an own name
+			fwrite("GlobalUnitsStoredAs.4ki                                         ", 1, 64, file);
 			fwrite(SynthObj.GlobalValues, 1, MAX_UNITS*MAX_UNIT_SLOTS, file);
 		}
 		fclose(file);
@@ -2055,12 +2059,8 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 					{
 						if (!v->reverb)
 						{
-							// if not notesync
-							if (v->synctype != 2)
-							{
-								// just push a dummy index
-								delay_indices.push_back(-1);
-							}
+							// just push a dummy index
+							delay_indices.push_back(-1);
 						}
 					}
 				}
@@ -2598,7 +2598,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(file, "	.size\n");
 		fprintf(file, "endstruc\n");
 		fprintf(file, "%%endif\n");
-
+		
 		fprintf(file, "%%ifdef GO4K_USE_FSTG\n");
 		fprintf(file, "GO4K_FSTG_ID	equ		12\n");
 		fprintf(file, "%%macro	GO4K_FSTG 2\n");
@@ -3130,7 +3130,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 						//	modes = "FST_MUL";
 						if (v->type & FST_POP)
 							modes += "+FST_POP";
-						fprintf(file, "\tGO4K_FST\tAMOUNT(%d),DEST(%d*MAX_UNIT_SLOTS+%d+%s)\n", v->amount, v->dest_unit-emptySkip, v->dest_slot, modes );
+						fprintf(file, "\tGO4K_FST\tAMOUNT(%d),DEST(%d*MAX_UNIT_SLOTS+%d+%s)\n", v->amount, v->dest_unit-emptySkip, v->dest_slot, modes.c_str());
 					}
 					// global storage
 					else
