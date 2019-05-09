@@ -2191,6 +2191,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 #endif
 		GetUses(&uses, InstrumentUsed);
 
+		// write inc file
 		switch (objformat) {
 			case 0:
 				fprintf(file, "%%define WIN32\n");
@@ -2203,39 +2204,48 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 				break;
 		}
 
-		// write inc file
 		if (objformat == 0) {
+			// windows: func(args) -> _func@argsz
 			fprintf(file, "%%macro export_func 2\n");
 			fprintf(file, "   global _%%1@%%2\n");
 			fprintf(file, "   _%%1@%%2:\n");
 			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_FN(n,i) _ %%+ n %%+ @ %%+ i");
 		} else if (objformat == 1) {
+			// linux: func(args) -> func
 			fprintf(file, "%%macro export_func 2\n");
 			fprintf(file, "   global %%1\n");
 			fprintf(file, "   %%1:\n");
 			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_FN(n,i) n");
 		} else if (objformat == 2) {
+			// osx: func(args) -> _func
 			fprintf(file, "%%macro export_func 2\n");
 			fprintf(file, "   global _%%1\n");
 			fprintf(file, "   _%%1:\n");
 			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_FN(n,i) _ %%+ n");
 		}
 
 		if (objformat == 1) {
 			fprintf(file, "%%define SECT_BSS(n) section .bss. %%+ n nobits alloc noexec write align=1\n");
 			fprintf(file, "%%define SECT_DATA(n) section .data. %%+ n progbits alloc noexec write align=1\n");
 			fprintf(file, "%%define SECT_TEXT(n) section .text. %%+ n progbits alloc exec nowrite align=1\n");
+			fprintf(file, "%%macro export_data 1\n");
+			fprintf(file, "   global %%1\n");
+			fprintf(file, "   %%1:\n");
+			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_DATA(n) n");
 		} else {
 			fprintf(file, "%%define SECT_BSS(n) section . %%+ n bss align=1\n");
 			fprintf(file, "%%define SECT_DATA(n) section . %%+ n data align=1\n");
 			fprintf(file, "%%define SECT_TEXT(n) section . %%+ n code align=1\n");
+			fprintf(file, "%%macro export_data 1\n");
+			fprintf(file, "   global _%%1\n");
+			fprintf(file, "   _%%1:\n");
+			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_DATA(n) _ %%+ n");
 		}
-
-//		fprintf(file, "%%macro export_dword_array 2\n");
-//		fprintf(file, "   %%define %%1 _%%1\n");
-//		fprintf(file, "   global %%1\n");
-//		fprintf(file, "   %%1 resd %%2\n");
-//		fprintf(file, "%%endmacro\n");
 
 /*		if (objformat == 0)
 			MessageBox(0,"WINDOWS","",MB_OK);
