@@ -2204,7 +2204,14 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 				break;
 		}
 
-		if (objformat != 2) // 0:windows, 1:linux, 2:osx
+		fprintf(file, "%%ifdef MACOSX_OBJECT\n");
+			fprintf(file, "; on osx, 'current' nasm has a bug and is not able to export custom sections\n");
+			fprintf(file, "; enable this on your own risk\n");
+			fprintf(file, ";%%define USE_SECTIONS\n");
+		fprintf(file, "%%else\n");
+			fprintf(file, "%%define USE_SECTIONS\n");
+		fprintf(file, "%%endif\n");
+		/*if (objformat != 2) // 0:windows, 1:linux, 2:osx
 		{
 			// use sections only for windows, 
 			// linux doesnt have any crinkler like packer to take advantage of multiple sections
@@ -2212,32 +2219,32 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 			// and osx export has a bug in current nasm and is not able to export custom sections
 			//// this one's fair, but they shouldn't be punished for using a newer version, so I've added the commented-out one   --pcy/K2
 			fprintf(file, "%%define USE_SECTIONS\n");
-		} else fprintf(file, ";%%define USE_SECTIONS\n");
+		} else fprintf(file, ";%%define USE_SECTIONS\n");*/
 
-		if (objformat == 0) {
+		fprintf(file, "%%ifdef WINDOWS_OBJECT\n");
 			// windows: func(args) -> _func@argsz
 			fprintf(file, "%%macro export_func 2\n");
 			fprintf(file, "   global _%%1@%%2\n");
 			fprintf(file, "   _%%1@%%2:\n");
 			fprintf(file, "%%endmacro\n");
 			fprintf(file, "%%define PUBLIC_FN(n,i) _ %%+ n %%+ @ %%+ i\n");
-		} else if (objformat == 1) {
+		fprintf(file, "%%elifdef LINUX_OBJECT\n");
 			// linux: func(args) -> func
 			fprintf(file, "%%macro export_func 2\n");
 			fprintf(file, "   global %%1\n");
 			fprintf(file, "   %%1:\n");
 			fprintf(file, "%%endmacro\n");
 			fprintf(file, "%%define PUBLIC_FN(n,i) n\n");
-		} else if (objformat == 2) {
+		fprintf(file, "%%elifdef MACOSX_OBJECT\n");
 			// osx: func(args) -> _func
 			fprintf(file, "%%macro export_func 2\n");
 			fprintf(file, "   global _%%1\n");
 			fprintf(file, "   _%%1:\n");
 			fprintf(file, "%%endmacro\n");
 			fprintf(file, "%%define PUBLIC_FN(n,i) _ %%+ n\n");
-		}
+		fprintf(file, "%%endif\n");
 
-		if (objformat == 1) {
+		fprintf(file, "%%elifdef LINUX_OBJECT\n");
 			fprintf(file, "%%ifdef USE_SECTIONS\n");
 			fprintf(file, "%%define SECT_BSS(n) section .bss. %%+ n nobits alloc noexec write align=1\n");
 			fprintf(file, "%%define SECT_DATA(n) section .data. %%+ n progbits alloc noexec write align=1\n");
@@ -2252,7 +2259,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 			fprintf(file, "   %%1:\n");
 			fprintf(file, "%%endmacro\n");
 			fprintf(file, "%%define PUBLIC_DATA(n) n\n");
-		} else {
+		fprintf(file, "%%else\n");
 			fprintf(file, "%%ifdef USE_SECTIONS\n");
 			fprintf(file, "%%define SECT_BSS(n) section . %%+ n bss align=1\n");
 			fprintf(file, "%%define SECT_DATA(n) section . %%+ n data align=1\n");
@@ -2267,7 +2274,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 			fprintf(file, "   _%%1:\n");
 			fprintf(file, "%%endmacro\n");
 			fprintf(file, "%%define PUBLIC_DATA(n) _ %%+ n\n");
-		}
+		fprintf(file, "%%endif\n");
 
 /*		if (objformat == 0)
 			MessageBox(0,"WINDOWS","",MB_OK);
