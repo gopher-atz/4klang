@@ -125,9 +125,9 @@ SECT_TEXT(crtemui)
 
 export_func	FloatRandomNumber,0
 	push	eax
-	imul    eax,dword [_RandSeed],16007
-	mov     dword [_RandSeed], eax 
-	fild	dword [_RandSeed]
+	imul    eax,dword [PUBLIC_DATA(RandSeed)],16007
+	mov     dword [PUBLIC_DATA(RandSeed)], eax 
+	fild	dword [PUBLIC_DATA(RandSeed)]
 	fidiv	dword [c_RandDiv]
 	pop		eax
 	ret
@@ -476,7 +476,7 @@ go4kVCO_func_skipnote:
 	call	PUBLIC_FN(Power,0)
 	test	al, byte LFO
 	jz		short go4kVCO_func_normalize_note
-	fmul	dword [_LFO_NORMALIZE]	; // st0 is now frequency for lfo  
+	fmul	dword [PUBLIC_DATA(LFO_NORMALIZE)]	; // st0 is now frequency for lfo  
 	jmp		short go4kVCO_func_normalized
 go4kVCO_func_normalize_note:	
 	fmul	dword [FREQ_NORMALIZE]	; // st0 is now frequency

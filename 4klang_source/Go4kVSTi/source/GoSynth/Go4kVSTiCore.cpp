@@ -2194,13 +2194,13 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		// write inc file
 		switch (objformat) {
 			case 0:
-				fprintf(file, "%%define WIN32\n");
+				fprintf(file, "%%define WINDOWS_OBJECT\n");
 				break;
 			case 1:
-				fprintf(file, "%%define LINUX\n");
+				fprintf(file, "%%define LINUX_OBJECT\n");
 				break;
 			case 2:
-				fprintf(file, "%%define MACOSX\n");
+				fprintf(file, "%%define MACOSX_OBJECT\n");
 				break;
 		}
 
@@ -3388,13 +3388,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		// TODO: Reduction here
 		fprintf(file, "SECT_DATA(g4kmuc5)\n");
 		fprintf(file, "%%ifdef GO4K_USE_DLL\n");
-		if (objformat == 1) {
-			fprintf(file, "global go4k_delay_times\n");
-			fprintf(file, "go4k_delay_times\n");
-		} else {
-			fprintf(file, "global _go4k_delay_times\n");
-			fprintf(file, "_go4k_delay_times\n");
-		}
+		fprintf(file, "export_data go4k_delay_times\n");
 		for (int i = 0; i < delay_times.size(); i++)
 		{
 			fprintf(file, "\tdw %d\n", delay_times[i]);
@@ -3496,11 +3490,11 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 	{
 		fprintf(fnfofile, "\n#define LINUX_OBJECT\n\n");
 		fprintf(fnfofile, "// declaration of the external synth render function, you'll always need that\n");
-		fprintf(fnfofile, "extern void* __4klang_render(void*);\n");
+		fprintf(fnfofile, "extern void* _4klang_render(void*);\n");
 		fprintf(fnfofile, "// declaration of the external envelope buffer. access only if you're song was exported with that option\n");
-		fprintf(fnfofile, "extern float __4klang_envelope_buffer;\n");
+		fprintf(fnfofile, "extern float _4klang_envelope_buffer;\n");
 		fprintf(fnfofile, "// declaration of the external note buffer. access only if you're song was exported with that option\n");
-		fprintf(fnfofile, "extern int   __4klang_note_buffer;\n");
+		fprintf(fnfofile, "extern int   _4klang_note_buffer;\n");
 	}
 	if (objformat == 2)
 	{
