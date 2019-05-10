@@ -2192,17 +2192,89 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		GetUses(&uses, InstrumentUsed);
 
 		// write inc file
-		fprintf(file, "%%macro export_func 1\n");
-//		fprintf(file, "   %%define %%1 _%%1\n");
-		fprintf(file, "   global _%%1\n");
-		fprintf(file, "   _%%1:\n");
-		fprintf(file, "%%endmacro\n");
+		switch (objformat) {
+			case 0:
+				fprintf(file, "%%define WINDOWS_OBJECT\n");
+				break;
+			case 1:
+				fprintf(file, "%%define LINUX_OBJECT\n");
+				break;
+			case 2:
+				fprintf(file, "%%define MACOSX_OBJECT\n");
+				break;
+		}
 
-//		fprintf(file, "%%macro export_dword_array 2\n");
-//		fprintf(file, "   %%define %%1 _%%1\n");
-//		fprintf(file, "   global %%1\n");
-//		fprintf(file, "   %%1 resd %%2\n");
-//		fprintf(file, "%%endmacro\n");
+		fprintf(file, "%%ifdef MACOSX_OBJECT\n");
+			fprintf(file, "; on osx, 'current' nasm has a bug and is not able to export custom sections\n");
+			fprintf(file, "; enable this on your own risk\n");
+			fprintf(file, ";%%define USE_SECTIONS\n");
+		fprintf(file, "%%else\n");
+			fprintf(file, "%%define USE_SECTIONS\n");
+		fprintf(file, "%%endif\n");
+		/*if (objformat != 2) // 0:windows, 1:linux, 2:osx
+		{
+			// use sections only for windows, 
+			// linux doesnt have any crinkler like packer to take advantage of multiple sections
+			//// ^ this is very wrong :) (eg. gnu ld --gc-sections)  --pcy/K2
+			// and osx export has a bug in current nasm and is not able to export custom sections
+			//// this one's fair, but they shouldn't be punished for using a newer version, so I've added the commented-out one   --pcy/K2
+			fprintf(file, "%%define USE_SECTIONS\n");
+		} else fprintf(file, ";%%define USE_SECTIONS\n");*/
+
+		fprintf(file, "%%ifdef WINDOWS_OBJECT\n");
+			// windows: func(args) -> _func@argsz
+			fprintf(file, "%%macro export_func 2\n");
+			fprintf(file, "   global _%%1@%%2\n");
+			fprintf(file, "   _%%1@%%2:\n");
+			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_FN(n,i) _ %%+ n %%+ @ %%+ i\n");
+		fprintf(file, "%%elifdef LINUX_OBJECT\n");
+			// linux: func(args) -> func
+			fprintf(file, "%%macro export_func 2\n");
+			fprintf(file, "   global %%1\n");
+			fprintf(file, "   %%1:\n");
+			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_FN(n,i) n\n");
+		fprintf(file, "%%elifdef MACOSX_OBJECT\n");
+			// osx: func(args) -> _func
+			fprintf(file, "%%macro export_func 2\n");
+			fprintf(file, "   global _%%1\n");
+			fprintf(file, "   _%%1:\n");
+			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_FN(n,i) _ %%+ n\n");
+		fprintf(file, "%%endif\n");
+
+		fprintf(file, "%%elifdef LINUX_OBJECT\n");
+			fprintf(file, "%%ifdef USE_SECTIONS\n");
+			fprintf(file, "%%define SECT_BSS(n) section .bss. %%+ n nobits alloc noexec write align=1\n");
+			fprintf(file, "%%define SECT_DATA(n) section .data. %%+ n progbits alloc noexec write align=1\n");
+			fprintf(file, "%%define SECT_TEXT(n) section .text. %%+ n progbits alloc exec nowrite align=1\n");
+			fprintf(file, "%%else\n");
+			fprintf(file, "%%define SECT_BSS(n) section .bss align=1\n");
+			fprintf(file, "%%define SECT_DATA(n) section .data align=1\n");
+			fprintf(file, "%%define SECT_TEXT(n) section .text align=1\n");
+			fprintf(file, "%%endif\n");
+			fprintf(file, "%%macro export_data 1\n");
+			fprintf(file, "   global %%1\n");
+			fprintf(file, "   %%1:\n");
+			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_DATA(n) n\n");
+		fprintf(file, "%%else\n");
+			fprintf(file, "%%ifdef USE_SECTIONS\n");
+			fprintf(file, "%%define SECT_BSS(n) section . %%+ n bss align=1\n");
+			fprintf(file, "%%define SECT_DATA(n) section . %%+ n data align=1\n");
+			fprintf(file, "%%define SECT_TEXT(n) section . %%+ n code align=1\n");
+			fprintf(file, "%%else\n");
+			fprintf(file, "%%define SECT_BSS(n) section .bss align=1\n");
+			fprintf(file, "%%define SECT_DATA(n) section .data align=1\n");
+			fprintf(file, "%%define SECT_TEXT(n) section .text align=1\n");
+			fprintf(file, "%%endif\n");
+			fprintf(file, "%%macro export_data 1\n");
+			fprintf(file, "   global _%%1\n");
+			fprintf(file, "   _%%1:\n");
+			fprintf(file, "%%endmacro\n");
+			fprintf(file, "%%define PUBLIC_DATA(n) _ %%+ n\n");
+		fprintf(file, "%%endif\n");
 
 /*		if (objformat == 0)
 			MessageBox(0,"WINDOWS","",MB_OK);
@@ -2211,14 +2283,6 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		if (objformat == 2)
 			MessageBox(0,"MACOSX","",MB_OK);
 */
-
-	if (objformat == 0) // 0:windows, 1:linux, 2:osx
-	{
-		// use sections only for windows, 
-		// linux doesnt have any crinkler like packer to take advantage of multiple sections
-		// and osx export has a bug in current nasm and is not able to export custom sections
-		fprintf(file, "%%define USE_SECTIONS\n");
-	}
 
 		fprintf(file, "%%define SAMPLE_RATE	%d\n", 44100);
 		fprintf(file, "%%define MAX_INSTRUMENTS	%d\n", maxinst + mergeMaxInst);
@@ -2753,11 +2817,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// the patterns
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		fprintf(file, "%%ifdef USE_SECTIONS\n");
-		fprintf(file, "section .g4kmuc1 data align=1\n");
-		fprintf(file, "%%else\n");
-		fprintf(file, "section .data align=1\n");
-		fprintf(file, "%%endif\n");
+		fprintf(file, "SECT_DATA(g4kmuc1)\n");
 		fprintf(file, "go4k_patterns\n");
 		for (int i = 0; i < ReducedPatterns.size()/PatternSize; i++)
 		{
@@ -2775,11 +2835,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// the pattern indices
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		fprintf(file, "%%ifdef USE_SECTIONS\n");
-		fprintf(file, "section .g4kmuc2 data align=1\n");
-		fprintf(file, "%%else\n");
-		fprintf(file, "section .data\n");
-		fprintf(file, "%%endif\n");
+		fprintf(file, "SECT_DATA(g4kmuc2)\n");
 		fprintf(file, "go4k_pattern_lists\n");
 #ifdef _8KLANG
 		// write primary plugins pattern indices
@@ -2818,11 +2874,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// the instrument commands
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		fprintf(file, "%%ifdef USE_SECTIONS\n");
-		fprintf(file, "section .g4kmuc3 data align=1\n");
-		fprintf(file, "%%else\n");
-		fprintf(file, "section .data\n");
-		fprintf(file, "%%endif\n");
+		fprintf(file, "SECT_DATA(g4kmuc3)\n");
 		fprintf(file, "go4k_synth_instructions\n");
 		char comstr[1024];
 		std::string CommandString;
@@ -2919,11 +2971,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// the instrument data
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		fprintf(file, "%%ifdef USE_SECTIONS\n");
-		fprintf(file, "section .g4kmuc4 data align=1\n");
-		fprintf(file, "%%else\n");
-		fprintf(file, "section .data\n");
-		fprintf(file, "%%endif\n");
+		fprintf(file, "SECT_DATA(.g4kmuc4)\n");
 		fprintf(file, "go4k_synth_parameter_values\n");
 		int delayindex = 0;
 		char valstr[1024];
@@ -3345,14 +3393,9 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		// delay line times
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// TODO: Reduction here
-		fprintf(file, "%%ifdef USE_SECTIONS\n");
-		fprintf(file, "section .g4kmuc5 data align=1\n");
-		fprintf(file, "%%else\n");
-		fprintf(file, "section .data\n");
-		fprintf(file, "%%endif\n");
+		fprintf(file, "SECT_DATA(g4kmuc5)\n");
 		fprintf(file, "%%ifdef GO4K_USE_DLL\n");
-		fprintf(file, "global _go4k_delay_times\n");
-		fprintf(file, "_go4k_delay_times\n");
+		fprintf(file, "export_data go4k_delay_times\n");
 		for (int i = 0; i < delay_times.size(); i++)
 		{
 			fprintf(file, "\tdw %d\n", delay_times[i]);
@@ -3454,11 +3497,11 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 	{
 		fprintf(fnfofile, "\n#define LINUX_OBJECT\n\n");
 		fprintf(fnfofile, "// declaration of the external synth render function, you'll always need that\n");
-		fprintf(fnfofile, "extern void* __4klang_render(void*);\n");
+		fprintf(fnfofile, "extern void* _4klang_render(void*);\n");
 		fprintf(fnfofile, "// declaration of the external envelope buffer. access only if you're song was exported with that option\n");
-		fprintf(fnfofile, "extern float __4klang_envelope_buffer;\n");
+		fprintf(fnfofile, "extern float _4klang_envelope_buffer;\n");
 		fprintf(fnfofile, "// declaration of the external note buffer. access only if you're song was exported with that option\n");
-		fprintf(fnfofile, "extern int   __4klang_note_buffer;\n");
+		fprintf(fnfofile, "extern int   _4klang_note_buffer;\n");
 	}
 	if (objformat == 2)
 	{
@@ -3470,7 +3513,7 @@ void Go4kVSTi_SaveByteStream(HINSTANCE hInst, char* filename, int useenvlevels, 
 		fprintf(fnfofile, "// declaration of the external note buffer. access only if you're song was exported with that option\n");
 		fprintf(fnfofile, "extern int   _4klang_note_buffer;\n");
 	}
-	
+
 	fclose(fnfofile);
 }
 

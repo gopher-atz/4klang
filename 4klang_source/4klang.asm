@@ -32,11 +32,7 @@ bits	32
 ; //========================================================================================
 ; //	.bss section
 ; //========================================================================================
-%ifdef USE_SECTIONS
-section		.g4kbss1	bss		align=1
-%else
-section .bss
-%endif
+SECT_BSS(g4kbss1)
 
 ; // the one and only synth object
 %if MAX_VOICES > 1
@@ -44,61 +40,53 @@ go4k_voiceindex 		resd	16
 %endif
 go4k_transformed_values	resd	16
 go4k_synth_wrk			resb	go4k_synth.size
-global _go4k_delay_buffer_ofs
-_go4k_delay_buffer_ofs	resd	1
-global _go4k_delay_buffer		
-_go4k_delay_buffer		resd	16*16*go4kDLL_wrk.size
+export_data go4k_delay_buffer_ofs
+	resd	1
+export_data go4k_delay_buffer
+	resd	16*16*go4kDLL_wrk.size
 
 %ifdef AUTHORING
-global __4klang_current_tick
-__4klang_current_tick	resd	0
+export_data _4klang_current_tick
+	resd	0
 %endif
 
 %ifdef GO4K_USE_ENVELOPE_RECORDINGS
-global __4klang_envelope_buffer
-__4klang_envelope_buffer	resd	((MAX_SAMPLES)/8) ; // samples every 256 samples and stores 16*2 = 32 values
+export_data _4klang_envelope_buffer
+	resd	((MAX_SAMPLES)/8) ; // samples every 256 samples and stores 16*2 = 32 values
 %endif
 %ifdef GO4K_USE_NOTE_RECORDINGS
-global __4klang_note_buffer
-__4klang_note_buffer		resd	((MAX_SAMPLES)/8) ; // samples every 256 samples and stores 16*2 = 32 values
+export_data _4klang_note_buffer
+	resd	((MAX_SAMPLES)/8) ; // samples every 256 samples and stores 16*2 = 32 values
 %endif
 
 ; //========================================================================================
 ; //	.g4kdat section (initialized data for go4k)
 ; //========================================================================================
-%ifdef USE_SECTIONS
-section		.g4kdat1	data	align=1
-%else
-section .data
-%endif
+SECT_DATA(g4kdat1)
 
 ; // some synth constants
 go4k_synth_commands		dd	0
-						dd	_go4kENV_func@0
-						dd	_go4kVCO_func@0					
-						dd	_go4kVCF_func@0
-						dd	_go4kDST_func@0
-						dd	_go4kDLL_func@0
-						dd	_go4kFOP_func@0
-						dd	_go4kFST_func@0
-						dd	_go4kPAN_func@0
-						dd	_go4kOUT_func@0
-						dd	_go4kACC_func@0		
-						dd	_go4kFLD_func@0
+						dd	PUBLIC_FN(go4kENV_func,0)
+						dd	PUBLIC_FN(go4kVCO_func,0)
+						dd	PUBLIC_FN(go4kVCF_func,0)
+						dd	PUBLIC_FN(go4kDST_func,0)
+						dd	PUBLIC_FN(go4kDLL_func,0)
+						dd	PUBLIC_FN(go4kFOP_func,0)
+						dd	PUBLIC_FN(go4kFST_func,0)
+						dd	PUBLIC_FN(go4kPAN_func,0)
+						dd	PUBLIC_FN(go4kOUT_func,0)
+						dd	PUBLIC_FN(go4kACC_func,0)		
+						dd	PUBLIC_FN(go4kFLD_func,0)
 %ifdef	GO4K_USE_GLITCH						
-						dd	_go4kGLITCH_func@0
+						dd	PUBLIC_FN(go4kGLITCH_func,0)
 %else
-						dd	_go4kFLD_func@0
+						dd	PUBLIC_FN(go4kFLD_func,0)
 %endif						
 %ifdef	GO4K_USE_FSTG
-						dd	_go4kFSTG_func@0
+						dd	PUBLIC_FN(go4kFSTG_func,0)
 %endif
 
-%ifdef USE_SECTIONS						
-section		.g4kdat2	data	align=1
-%else
-section .data
-%endif
+SECT_DATA(g4kdat2)
 
 %ifdef GO4K_USE_16BIT_OUTPUT
 c_32767					dd		32767.0
@@ -119,13 +107,13 @@ c_dc_const				dd		0.99609375		; R = 1 - (pi*2 * frequency /samplerate)
 c_dc_const				dd		0.99609375		; R = 1 - (pi*2 * frequency /samplerate) 
 	%endif
 %endif
-global _RandSeed
-_RandSeed				dd		1
+export_data RandSeed
+						dd		1
 c_24					dd		24
 c_i12					dd		0x3DAAAAAA
 FREQ_NORMALIZE			dd		0.000092696138	; // 220.0/(2^(69/12)) / 44100.0
-global _LFO_NORMALIZE
-_LFO_NORMALIZE			dd		DEF_LFO_NORMALIZE
+export_data LFO_NORMALIZE
+						dd		DEF_LFO_NORMALIZE
 %ifdef GO4K_USE_GROOVE_PATTERN
 go4k_groove_pattern		dw		0011100111001110b
 %endif
@@ -133,17 +121,13 @@ go4k_groove_pattern		dw		0011100111001110b
 ; //========================================================================================
 ; //	.crtemui section (emulates crt functions)
 ; //========================================================================================
-%ifdef USE_SECTIONS
-section		.crtemui	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(crtemui)
 
-export_func	FloatRandomNumber@0
+export_func	FloatRandomNumber,0
 	push	eax
-	imul    eax,dword [_RandSeed],16007
-	mov     dword [_RandSeed], eax 
-	fild	dword [_RandSeed]
+	imul    eax,dword [PUBLIC_DATA(RandSeed)],16007
+	mov     dword [PUBLIC_DATA(RandSeed)], eax 
+	fild	dword [PUBLIC_DATA(RandSeed)]
 	fidiv	dword [c_RandDiv]
 	pop		eax
 	ret
@@ -154,11 +138,7 @@ export_func	FloatRandomNumber@0
 
 %ifdef INCLUDE_WAVESHAPER
 
-%ifdef USE_SECTIONS
-section		.g4kcod2	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcod2)
 ; //----------------------------------------------------------------------------------------
 ; //	Waveshaper function
 ; //----------------------------------------------------------------------------------------
@@ -201,11 +181,7 @@ go4kWaveshaper_clip:
 
 %endif
 
-%ifdef USE_SECTIONS
-section		.g4kcod3	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcod3)
 ; //----------------------------------------------------------------------------------------
 ; //	unit values preparation/transform
 ; //----------------------------------------------------------------------------------------
@@ -227,11 +203,7 @@ go4kTransformValues_loop:
 	pop		ecx
 	ret		4
 
-%ifdef USE_SECTIONS	
-section		.g4kcod4	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g5kcod4)
 ; //----------------------------------------------------------------------------------------
 ; //	Envelope param mapping
 ; //----------------------------------------------------------------------------------------
@@ -249,7 +221,7 @@ go4kENVMap:
 ; //				st1		:	exponent
 ; //	Output:		st0		:	result
 ; //----------------------------------------------------------------------------------------
-export_func	Power@0	; // base				exp	
+export_func	Power,0	; // base				exp	
 	fld1
 	fadd	st0	
 	fyl2x				; // log2_base
@@ -261,12 +233,8 @@ export_func	Power@0	; // base				exp
 	fscale
 	fstp	st1
 	ret
-	
-%ifdef USE_SECTIONS
-section		.g4kcoda	code	align=1
-%else
-section .text
-%endif
+
+SECT_TEXT(g4kcoda)
 ; //----------------------------------------------------------------------------------------
 ; //	ENV Tick
 ; //----------------------------------------------------------------------------------------
@@ -276,7 +244,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		eax
 ; //----------------------------------------------------------------------------------------
-export_func	go4kENV_func@0
+export_func	go4kENV_func,0
 	push	5
 	call	go4kTransformValues
 %ifdef GO4K_USE_ENV_CHECK
@@ -356,11 +324,7 @@ go4kENV_func_leave2:
 ; // OUT	:		
 ; // DIRTY	:		eax
 ; //----------------------------------------------------------------------------------------
-%ifdef USE_SECTIONS
-section		.g4kcodp	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodp)
 go4kVCO_pulse:
 	fucomi	st1								; // c		p
 	fld1
@@ -371,11 +335,7 @@ go4kVCO_func_pulse_up:
 	fstp	st1								; // +-1
 	ret
 
-%ifdef USE_SECTIONS	
-section		.g4kcodt	code	align=1	
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodt)
 go4kVCO_trisaw:
 	fucomi	st1								; // c		p
 	jnc		short go4kVCO_func_trisaw_up
@@ -389,11 +349,7 @@ go4kVCO_func_trisaw_up:
 	fsubp	st1, st0						; // 2*''-1
 	ret
 
-%ifdef USE_SECTIONS	
-section		.g4kcods	code	align=1		
-%else
-section .text
-%endif	
+SECT_TEXT(g4kcods)
 go4kVCO_sine:	
 	fucomi	st1								; // c		p
 	jnc		short go4kVCO_func_sine_do
@@ -409,11 +365,7 @@ go4kVCO_func_sine_do
 	ret	
 
 %ifdef GO4K_USE_VCO_GATE
-%ifdef USE_SECTIONS	
-section		.g4kcodq	code	align=1		
-%else
-section .text
-%endif	
+SECT_TEXT(g4kcodq)
 go4kVCO_gate:	
 	fxch									; // p		c
 	fstp	st1								; // p		
@@ -437,12 +389,8 @@ go4kVCO_gate_bit:
 	ret	
 %endif
 
-%ifdef USE_SECTIONS	
-section		.g4kcodb	code	align=1
-%else
-section .text
-%endif
-export_func	go4kVCO_func@0
+SECT_TEXT(g4kcodb)
+export_func	go4kVCO_func,0
 %ifdef GO4K_USE_VCO_PHASE_OFFSET
 	%ifdef GO4K_USE_VCO_SHAPE
 		%ifdef GO4K_USE_VCO_GATE
@@ -525,10 +473,10 @@ go4kVCO_func_nodswap:
 	fiadd	dword [ecx-4]				; // st0 is note, st1 is t+d offset
 go4kVCO_func_skipnote:		
 	fmul	dword [c_i12]
-	call	_Power@0
+	call	PUBLIC_FN(Power,0)
 	test	al, byte LFO
 	jz		short go4kVCO_func_normalize_note
-	fmul	dword [_LFO_NORMALIZE]	; // st0 is now frequency for lfo  
+	fmul	dword [PUBLIC_DATA(LFO_NORMALIZE)]	; // st0 is now frequency for lfo  
 	jmp		short go4kVCO_func_normalized
 go4kVCO_func_normalize_note:	
 	fmul	dword [FREQ_NORMALIZE]	; // st0 is now frequency
@@ -585,7 +533,7 @@ go4kVCO_func_gate:
 go4kVCO_func_noise:	
 	test	al, byte NOISE
 	jz		short go4kVCO_func_end
-	call	_FloatRandomNumber@0
+	call	PUBLIC_FN(FloatRandomNumber,0)
 	fstp	st1
 	fstp	st1
 go4kVCO_func_end:
@@ -615,11 +563,7 @@ go4kVCO_func_stereodone:
 %endif		
 	ret
 
-%ifdef USE_SECTIONS
-section		.g4kcodc	code	align=1
-%else
-section .text
-%endif	
+SECT_TEXT(g4kcodc)
 ; //----------------------------------------------------------------------------------------
 ; //	VCF Tick
 ; //----------------------------------------------------------------------------------------
@@ -629,7 +573,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		eax
 ; //----------------------------------------------------------------------------------------
-export_func	go4kVCF_func@0
+export_func	go4kVCF_func,0
 	push	3
 	call	go4kTransformValues
 %ifdef GO4K_USE_VCF_CHECK
@@ -713,11 +657,7 @@ go4kVCF_func_processdone:
 go4kVCF_func_end:							; // value	-		-		-		-
 	ret
 
-%ifdef USE_SECTIONS
-section		.g4kcodd	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodd)
 ; //----------------------------------------------------------------------------------------
 ; //	DST Tick
 ; //----------------------------------------------------------------------------------------
@@ -727,7 +667,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		eax
 ; //----------------------------------------------------------------------------------------
-export_func	go4kDST_func@0
+export_func	go4kDST_func,0
 %ifdef GO4K_USE_DST
 %ifdef GO4K_USE_DST_SH
 	%ifdef GO4K_USE_DST_STEREO
@@ -810,11 +750,7 @@ go4kDST_func_monohold:
 
 %endif
 
-%ifdef USE_SECTIONS	
-section		.g4kcodf	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodf)
 ; //----------------------------------------------------------------------------------------
 ; //	DLL Tick
 ; //----------------------------------------------------------------------------------------
@@ -824,7 +760,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		eax
 ; //----------------------------------------------------------------------------------------
-export_func	go4kDLL_func@0
+export_func	go4kDLL_func,0
 %ifdef GO4K_USE_DLL
 %ifdef GO4K_USE_DLL_CHORUS
 	%ifdef GO4K_USE_DLL_DAMP
@@ -848,17 +784,17 @@ export_func	go4kDLL_func@0
 	fld1
 	fild	dword [ecx-4]			; // load note freq
 	fmul	dword [c_i12]
-	call	_Power@0
+	call	PUBLIC_FN(Power,0)
 	fmul	dword [FREQ_NORMALIZE]	; // normalize
 	fdivp	st1, st0				; // invert to get numer of samples
-	fistp	word [_go4k_delay_times+ebx*2]	; store current comb size
+	fistp	word [PUBLIC_DATA(go4k_delay_times)+ebx*2]	; store current comb size
 %endif	
 go4kDLL_func_process:
 	mov		ecx, eax							;// ecx is delay counter	
 %ifdef 	GO4K_USE_DLL_MOD
 	mov		edi, WRK							;// edi is modulation workspace
 %endif
-	mov		WRK, dword [_go4k_delay_buffer_ofs]	;// ebp is current delay
+	mov		WRK, dword [PUBLIC_DATA(go4k_delay_buffer_ofs)]	;// ebp is current delay
 	fld		st0									;// in		in
 %ifdef GO4K_USE_DLL_MOD_IM
 	fld		dword [edx+go4kDLL_val.dry]			;// dry		in		in
@@ -917,7 +853,7 @@ go4kDLL_func_process:
 %endif	
 	
 go4kDLL_func_loop:
-	movzx	esi, word [_go4k_delay_times+ebx*2]	; fetch comb size
+	movzx	esi, word [PUBLIC_DATA(go4k_delay_times)+ebx*2]	; fetch comb size
 	mov 	eax, dword [WRK+go4kDLL_wrk.index]	;// eax is current comb index
 
 %ifdef GO4K_USE_DLL_CHORUS	
@@ -981,7 +917,7 @@ go4kDLL_func_buffer_nowrap2:
 	;// increment buffer pointer to next buffer
 	inc		ebx									;// go to next delay length index
 	add		WRK, go4kDLL_wrk.size				;// go to next delay
-	mov		dword [_go4k_delay_buffer_ofs], WRK	;// store next delay offset
+	mov		dword [PUBLIC_DATA(go4k_delay_buffer_ofs)], WRK	;// store next delay offset
 	loopne	go4kDLL_func_loop	
 	fstp	st0									;//	out'
 	;// process a dc filter to prevent heavy offsets in reverb
@@ -1005,11 +941,7 @@ go4kDLL_func_buffer_nowrap2:
 %endif
 
 
-%ifdef USE_SECTIONS	
-section		.g4kcodu	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodu)
 ; //----------------------------------------------------------------------------------------
 ; //	GLITCH Tick
 ; //----------------------------------------------------------------------------------------
@@ -1019,14 +951,14 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		eax
 ; //----------------------------------------------------------------------------------------
-export_func	go4kGLITCH_func@0
+export_func	go4kGLITCH_func,0
 %ifdef GO4K_USE_GLITCH
 	push	5
 	call	go4kTransformValues
 	pushad	
 		
 	mov		edi, WRK
-	mov		WRK, dword [_go4k_delay_buffer_ofs]	;// ebp is current delay
+	mov		WRK, dword [PUBLIC_DATA(go4k_delay_buffer_ofs)]	;// ebp is current delay
 	
 ;	mov		eax, dword [edx+go4kGLITCH_val.active]
 ;	or		eax, dword [edi+go4kGLITCH_wrk2.am]
@@ -1048,7 +980,7 @@ export_func	go4kGLITCH_func@0
 		mov		dword [WRK+go4kGLITCH_wrk.index], eax
 		mov		dword [WRK+go4kGLITCH_wrk.store], eax			
 		movzx	ebx, byte [VAL-(go4kGLITCH_val.size-go4kGLITCH_val.slicesize)/4]	;// slicesize index
-		movzx	eax, word [_go4k_delay_times+ebx*2]									;// fetch slicesize
+		movzx	eax, word [PUBLIC_DATA(go4k_delay_times)+ebx*2]									;// fetch slicesize
 		push	eax
 		fld1	
 		fild	dword [esp]
@@ -1092,7 +1024,7 @@ go4kGLITCH_func_filldone:
 		fadd	dword [edi+go4kGLITCH_wrk2.sm]
 		fsub	dword [c_0_5]
 		fmul	dword [c_0_5]
-		call _Power@0				
+		call PUBLIC_FN(Power,0)				
 		fmul	dword [WRK+go4kGLITCH_wrk.slizesize]
 		fstp	dword [WRK+go4kGLITCH_wrk.slizesize]
 		
@@ -1100,7 +1032,7 @@ go4kGLITCH_func_filldone:
 		fadd	dword [edi+go4kGLITCH_wrk2.pm]
 		fsub	dword [c_0_5]
 		fmul	dword [c_0_5]
-		call _Power@0				
+		call PUBLIC_FN(Power,0)				
 		fmul	dword [WRK+go4kGLITCH_wrk.slicepitch]
 		fstp	dword [WRK+go4kGLITCH_wrk.slicepitch]		
 go4kGLITCH_func_process_done:
@@ -1122,16 +1054,12 @@ go4kGLITCH_func_notactive:
 	mov		dword [WRK+go4kGLITCH_wrk.slizesize], eax	
 go4kGLITCH_func_leave:
 	add		WRK, go4kDLL_wrk.size				;// go to next delay
-	mov		dword [_go4k_delay_buffer_ofs], WRK	;// store next delay offset
+	mov		dword [PUBLIC_DATA(go4k_delay_buffer_ofs)], WRK	;// store next delay offset
 	popad
 	ret
 %endif
 
-%ifdef USE_SECTIONS
-section		.g4kcodg	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodg)
 ; //----------------------------------------------------------------------------------------
 ; //	FOP Tick (various fp stack based operations)
 ; //----------------------------------------------------------------------------------------
@@ -1141,7 +1069,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		
 ; //----------------------------------------------------------------------------------------
-export_func	go4kFOP_func@0
+export_func	go4kFOP_func,0
 	push	1
 	call	go4kTransformValues
 go4kFOP_func_pop:	
@@ -1196,11 +1124,7 @@ go4kFOP_func_mulp2:
 	fmulp	st2, st0
 	ret
 	
-%ifdef USE_SECTIONS	
-section		.g4kcodh	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodh)
 ; //----------------------------------------------------------------------------------------
 ; //	FST Tick (stores a value somewhere in the local workspace)
 ; //----------------------------------------------------------------------------------------
@@ -1210,7 +1134,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		
 ; //----------------------------------------------------------------------------------------
-export_func	go4kFST_func@0
+export_func	go4kFST_func,0
 	push	1
 	call	go4kTransformValues
 	fld		dword [edx+go4kFST_val.amount]
@@ -1230,11 +1154,7 @@ go4kFST_func_set:
 go4kFST_func_done:	
 	ret
 
-%ifdef USE_SECTIONS	
-section		.g4kcodm	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodm)
 ; //----------------------------------------------------------------------------------------
 ; //	FLD Tick (load a value on stack, optionally add a modulation signal beforehand)
 ; //----------------------------------------------------------------------------------------
@@ -1244,7 +1164,7 @@ section .text
 ; // OUT	:		signal-signal*pan , signal*pan
 ; // DIRTY	:		
 ; //----------------------------------------------------------------------------------------	
-export_func	go4kFLD_func@0								;// in		main env
+export_func	go4kFLD_func,0								;// in		main env
 %ifdef GO4K_USE_FLD
 	push	1
 	call	go4kTransformValues
@@ -1258,11 +1178,7 @@ export_func	go4kFLD_func@0								;// in		main env
 	ret		
 	
 %ifdef GO4K_USE_FSTG
-%ifdef USE_SECTIONS	
-section		.g4kcodi	code	align=1
-%else
-section .text
-%endif	
+SECT_TEXT(g4kcodi)
 ; //----------------------------------------------------------------------------------------
 ; //	FSTG Tick (stores a value anywhere in the synth (and in each voice))
 ; //----------------------------------------------------------------------------------------
@@ -1272,7 +1188,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		
 ; //----------------------------------------------------------------------------------------
-export_func	go4kFSTG_func@0
+export_func	go4kFSTG_func,0
 	push	1
 	call	go4kTransformValues
 %ifdef GO4K_USE_FSTG_CHECK
@@ -1308,11 +1224,7 @@ go4kFSTG_func_done:
 	ret
 %endif	
 
-%ifdef USE_SECTIONS	
-section		.g4kcodj	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodj)
 ; //----------------------------------------------------------------------------------------
 ; //	PAN Tick (multiplies signal with main envelope and converts to stereo)
 ; //----------------------------------------------------------------------------------------
@@ -1322,7 +1234,7 @@ section .text
 ; // OUT	:		signal-signal*pan , signal*pan
 ; // DIRTY	:		
 ; //----------------------------------------------------------------------------------------	
-export_func	go4kPAN_func@0								;// in		main env
+export_func	go4kPAN_func,0								;// in		main env
 %ifdef GO4K_USE_PAN
 	push	1
 	call	go4kTransformValues
@@ -1339,11 +1251,7 @@ export_func	go4kPAN_func@0								;// in		main env
 %endif	
 	ret
 
-%ifdef USE_SECTIONS	
-section		.g4kcodk	code	align=1
-%else
-section .text
-%endif	
+SECT_TEXT(g4kcodk)
 ; //----------------------------------------------------------------------------------------
 ; //	OUT Tick ( stores stereo signal pair in temp buffers of the instrument)
 ; //----------------------------------------------------------------------------------------
@@ -1353,7 +1261,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		
 ; //----------------------------------------------------------------------------------------
-export_func	go4kOUT_func@0								;// l		r
+export_func	go4kOUT_func,0								;// l		r
 %ifdef	GO4K_USE_GLOBAL_DLL
 	push	2
 	call	go4kTransformValues
@@ -1410,11 +1318,7 @@ export_func	go4kOUT_func@0								;// l		r
 %endif		
 	ret	
 
-%ifdef USE_SECTIONS	
-section		.g4kcodl	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodl)
 ; //----------------------------------------------------------------------------------------
 ; //	ACC Tick (stereo signal accumulation for synth commands only -> dont use in instrument commands)
 ; //----------------------------------------------------------------------------------------
@@ -1424,7 +1328,7 @@ section .text
 ; // OUT	:		
 ; // DIRTY	:		eax
 ; //----------------------------------------------------------------------------------------
-export_func	go4kACC_func@0
+export_func	go4kACC_func,0
 	push	1
 	call	go4kTransformValues
 	pushad
@@ -1445,11 +1349,7 @@ go4kACC_func_loop:
 	popad
 	ret
 	
-%ifdef USE_SECTIONS
-section		.g4kcodw	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodw)
 ; //----------------------------------------------------------------------------------------
 ; //	Update Instrument (allocate voices, set voice to release)
 ; //----------------------------------------------------------------------------------------
@@ -1500,11 +1400,7 @@ go4kUpdateInstrument_newNote:
 go4kUpdateInstrument_done:
 	ret
 
-%ifdef USE_SECTIONS
-section		.g4kcodx	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodx)
 ; //----------------------------------------------------------------------------------------
 ; //	Render Voices
 ; //----------------------------------------------------------------------------------------
@@ -1539,11 +1435,11 @@ go4kRenderVoices_next:
 	add		eax, dword [esp]				; // + 2*currentinstrument+0
 %ifdef GO4K_USE_ENVELOPE_RECORDINGS
 	mov		edx, dword [ecx+go4kENV_wrk.level]
-	mov		dword [__4klang_envelope_buffer+eax*4], edx
+	mov		dword [PUBLIC_DATA(_4klang_envelope_buffer)+eax*4], edx
 %endif	
 %ifdef GO4K_USE_NOTE_RECORDINGS
 	mov		edx, dword [ecx-4]
-	mov		dword [__4klang_note_buffer+eax*4], edx
+	mov		dword [PUBLIC_DATA(_4klang_note_buffer)+eax*4], edx
 %endif		
 %endif
 
@@ -1564,11 +1460,11 @@ go4k_render_instrument_next2:
 	add		eax, dword [esp]				; // + 2*currentinstrument+0
 %ifdef GO4K_USE_ENVELOPE_RECORDINGS
 	mov		edx, dword [ecx+go4kENV_wrk.level]
-	mov		dword [__4klang_envelope_buffer+eax*4+4], edx
+	mov		dword [PUBLIC_DATA(_4klang_envelope_buffer)+eax*4+4], edx
 %endif	
 %ifdef GO4K_USE_NOTE_RECORDINGS
 	mov		edx, dword [ecx-4]
-	mov		dword [__4klang_note_buffer+eax*4+4], edx
+	mov		dword [PUBLIC_DATA(_4klang_note_buffer)+eax*4+4], edx
 %endif		
 %endif
 
@@ -1576,19 +1472,11 @@ go4k_render_instrument_next2:
 	pop		ecx								; // restore instrument counter	
 	ret
 
-%ifdef USE_SECTIONS				
-section		.g4kcody	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcody)
 ; //----------------------------------------------------------------------------------------
 ; //	the entry point for the synth
 ; //----------------------------------------------------------------------------------------
-%ifdef USE_SECTIONS
-export_func	_4klang_render@4
-%else
-export_func	_4klang_render
-%endif
+export_func	_4klang_render,4
 	pushad
 	xor		ecx, ecx
 %ifdef GO4K_USE_BUFFER_RECORDINGS		
@@ -1604,8 +1492,8 @@ go4k_render_sampleloop:
 		xor		ecx, ecx
 		mov		ebx, go4k_synth_instructions	; // ebx = instrument command index
 		mov		VAL, go4k_synth_parameter_values; // VAL = instrument values index
-		mov		edi, _go4k_delay_buffer			; // get offset of first delay buffer
-		mov		dword [_go4k_delay_buffer_ofs], edi	; // store offset in delaybuffer offset variable
+		mov		edi, PUBLIC_DATA(go4k_delay_buffer)			; // get offset of first delay buffer
+		mov		dword [PUBLIC_DATA(go4k_delay_buffer_ofs)], edi	; // store offset in delaybuffer offset variable
 		mov		edi, go4k_synth_wrk				; // edi = first instrument
 ; loop all instruments		
 go4k_render_instrumentloop:	
@@ -1718,7 +1606,7 @@ go4k_render_nogroove:
 	pop		ecx	
 	inc		ecx
 %ifdef AUTHORING
-	mov		dword[__4klang_current_tick], ecx
+	mov		dword[PUBLIC_DATA(_4klang_current_tick)], ecx
 %endif
 	cmp		ecx, dword MAX_TICKS
 	jl		go4k_render_tickloop
@@ -1728,11 +1616,7 @@ go4k_render_nogroove:
 	popad
 	ret		4      
 
-%ifdef USE_SECTIONS
-section		.g4kcodz	code	align=1
-%else
-section .text
-%endif
+SECT_TEXT(g4kcodz)
 ; //----------------------------------------------------------------------------------------
 ; //	the magic behind it :)
 ; //----------------------------------------------------------------------------------------
