@@ -40,12 +40,16 @@ public:
 	virtual bool getProductString (char* text);
 	virtual long getVendorVersion () {return 1;}
 	virtual long canDo (char* text);
+	virtual long getChunk(void** data, bool isPreset = false) override;
+	virtual long setChunk(void* data, long byteSize, bool isPreset = false) override;
 
 private:
 	void initProcess();
 	void ApplyEvent(VstMidiEvent *event);
 
 	std::vector<VstMidiEvent*> m_currentEvents;
+
+	unsigned char *m_chunkBuffer;
 };
 
 #endif

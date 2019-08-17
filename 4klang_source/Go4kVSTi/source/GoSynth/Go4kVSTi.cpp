@@ -3,7 +3,7 @@
 #ifndef __Go4kVSTi__
 #include "Go4kVSTi.h"
 #endif
-
+#include "Go4kVSTiCore.h"
 //-----------------------------------------------------------------------------------------
 // Go4kVSTi
 //-----------------------------------------------------------------------------------------
@@ -11,6 +11,7 @@
 //-----------------------------------------------------------------------------------------
 Go4kVSTi::Go4kVSTi (audioMasterCallback audioMaster) : AudioEffectX (audioMaster, 0, 0)
 {
+	m_chunkBuffer = 0;
 	if (audioMaster)
 	{
 		setNumInputs (0);				// no inputs
@@ -19,6 +20,7 @@ Go4kVSTi::Go4kVSTi (audioMasterCallback audioMaster) : AudioEffectX (audioMaster
 		hasVu (false);
 		hasClip (false);
 		isSynth ();
+		programsAreChunks (true);
 #ifdef _8KLANG
 		setUniqueID ('8klg');
 #else
@@ -32,6 +34,7 @@ Go4kVSTi::Go4kVSTi (audioMasterCallback audioMaster) : AudioEffectX (audioMaster
 //-----------------------------------------------------------------------------------------
 Go4kVSTi::~Go4kVSTi ()
 {
+	delete[] m_chunkBuffer;
 }
 
 //-----------------------------------------------------------------------------------------
@@ -141,3 +144,61 @@ long Go4kVSTi::canDo (char* text)
 	return -1;	// explicitly can't do; 0 => don't know
 }
 
+//-----------------------------------------------------------------------------------------
+long Go4kVSTi::getChunk(void** data, bool isPreset)
+{
+	// serialize patch data into file, then load it back
+	char path[MAX_PATH];
+	char filename[MAX_PATH];
+	GetTempPath(MAX_PATH, path);
+	GetTempFileName(path, "4klang_", 0, filename);
+	Go4kVSTi_SavePatch(filename);
+
+	HANDLE h = CreateFile(filename, GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
+	if (h == INVALID_HANDLE_VALUE)
+		return 0;
+
+	DWORD dummy;
+	DWORD size = GetFileSize(h, &dummy);
+	delete[] m_chunkBuffer;
+	m_chunkBuffer = new unsigned char[size];
+	ReadFile(h, m_chunkBuffer, size, &dummy, 0);
+	CloseHandle(h);
+	DeleteFile(filename);
+
+	if (dummy == size)
+	{
+		*data = m_chunkBuffer;
+		return size;
+	}
+	return 0;
+}
+
+//-----------------------------------------------------------------------------------------
+long Go4kVSTi::setChunk(void* data, long byteSize, bool isPreset)
+{
+	if (!data || !byteSize) return 0;
+
+	// write chunk into file, then deserialize as patch data
+	char path[MAX_PATH];
+	char filename[MAX_PATH];
+	GetTempPath(MAX_PATH, path);
+	GetTempFileName(path, "4klang_", 0, filename);
+
+	HANDLE h = CreateFile(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+	if (h == INVALID_HANDLE_VALUE)
+	{
+		DWORD err = GetLastError();
+		return 0;
+	}
+	DWORD dummy;
+	WriteFile(h, data, byteSize, &dummy, 0);
+	CloseHandle(h);
+	
+	if (dummy == byteSize)
+	{
+		Go4kVSTi_LoadPatch(filename);
+	}
+	DeleteFile(filename);
+	return 0;
+}
