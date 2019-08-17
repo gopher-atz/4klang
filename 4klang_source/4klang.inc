@@ -11,6 +11,8 @@
 ; //----------------------------------------------------------------------------------------
 ; //	basic defines for the song/synth
 ; //----------------------------------------------------------------------------------------
+;%define AUTHORING					; Use to export the current tick being rendered
+;%define SINGLE_TICK_RENDERING		; Use to render single tick on _4klang_render invocation ( requires AUTHORING enabled )
 %define	SAMPLE_RATE	44100
 %define	MAX_INSTRUMENTS	9
 %define	MAX_VOICES 1
@@ -967,5 +969,7 @@ _go4k_delay_times
 	dw 1516
 	dw 1580
 	dw 1642
-	times 100 dw 0	
+	dw 22050		; Originally times 100 dw 0, but crashes for me (Peter) - so reverted to this found in an older version
+	dw 16537
+	dw 11025
 %endif
