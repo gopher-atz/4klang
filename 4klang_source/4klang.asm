@@ -87,7 +87,9 @@ go4k_synth_commands		dd	0
 						dd	_go4kFLD_func@0
 %ifdef	GO4K_USE_GLITCH						
 						dd	_go4kGLITCH_func@0
-%endif 				; Peter Salomonsen removed the else _go4kFLD_func@0 for backwards compatibility with songs not using the GLITCH func
+%else
+						dd	_go4kFLD_func@0
+%endif						
 %ifdef	GO4K_USE_FSTG
 						dd	_go4kFSTG_func@0
 %endif
